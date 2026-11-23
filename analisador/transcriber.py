@@ -16,25 +16,59 @@ class ErroServicoTranscricao(Exception):
     """O serviço de reconhecimento de fala ficou indisponível (rede, cota, etc.)."""
 
 
-def calcular_trechos(duracao_ms, tamanho_trecho_ms):
-    """Divide a duração total em intervalos (início, fim) de no máximo ``tamanho_trecho_ms``.
+# Janela onde se procura a pausa para cortar: trechos de 7 a 13 s. A API gratuita do Google
+# erra mais com trechos longos; cortar na pausa evita partir uma palavra entre dois trechos.
+MINIMO_TRECHO_MS = 7_000
+MAXIMO_TRECHO_MS = 13_000
+QUADRO_MS = 50
+# Um quadro só conta como pausa se estiver bem abaixo do volume médio da janela.
+_LIMIAR_PAUSA = 0.6
+
+
+def _melhor_corte(audio, inicio, alvo_ms, minimo_ms, maximo_ms, quadro_ms):
+    """Posição (ms) do corte do trecho que começa em ``inicio``: o centro do quadro mais silencioso."""
+    quadros = []
+    for comeco in range(inicio + minimo_ms, inicio + maximo_ms, quadro_ms):
+        quadros.append((audio[comeco:comeco + quadro_ms].rms, comeco + quadro_ms // 2))
+    media = sum(rms for rms, _ in quadros) / len(quadros)
+    menor = min(rms for rms, _ in quadros)
+    if media > 0 and menor >= _LIMIAR_PAUSA * media:
+        return inicio + maximo_ms  # sem pausa (ex.: música contínua): corta no limite
+    alvo = inicio + alvo_ms
+    return min((c for rms, c in quadros if rms == menor), key=lambda c: abs(c - alvo))
+
+
+def escolher_cortes(audio, alvo_ms=TAMANHO_TRECHO_MS, minimo_ms=MINIMO_TRECHO_MS,
+                    maximo_ms=MAXIMO_TRECHO_MS, quadro_ms=QUADRO_MS):
+    """Divide o áudio em trechos cortando nas pausas, para não partir palavras ao meio.
+
+    Para cada corte, só a janela entre ``minimo_ms`` e ``maximo_ms`` do trecho é analisada
+    (em quadros de ``quadro_ms``), o que mantém o custo baixo mesmo em áudios de horas.
 
     Args:
-        duracao_ms (int): duração do áudio em milissegundos.
-        tamanho_trecho_ms (int): tamanho máximo de cada trecho em milissegundos.
+        audio (AudioSegment): áudio inteiro.
+        alvo_ms (int): tamanho preferido do trecho (desempate entre pausas igualmente silenciosas).
+        minimo_ms (int): menor tamanho de trecho (exceto o último).
+        maximo_ms (int): maior tamanho de trecho; sem pausa na janela, o corte é aqui.
+        quadro_ms (int): resolução da busca pela pausa.
 
     Returns:
-        list[tuple[int, int]]: intervalos sem trechos vazios.
+        list[tuple[int, int]]: intervalos (início, fim) contíguos, de 0 até ``len(audio)``.
 
     Raises:
-        ValueError: se ``tamanho_trecho_ms`` não for positivo.
+        ValueError: se não valer ``0 < minimo_ms <= alvo_ms <= maximo_ms`` e ``quadro_ms > 0``.
     """
-    if tamanho_trecho_ms <= 0:
-        raise ValueError("O tamanho do trecho deve ser positivo.")
-    return [
-        (inicio, min(inicio + tamanho_trecho_ms, duracao_ms))
-        for inicio in range(0, max(duracao_ms, 0), tamanho_trecho_ms)
-    ]
+    if not (0 < minimo_ms <= alvo_ms <= maximo_ms) or quadro_ms <= 0:
+        raise ValueError("Tamanhos de trecho inválidos.")
+    duracao = len(audio)
+    trechos, inicio = [], 0
+    while duracao - inicio > maximo_ms:
+        corte = _melhor_corte(audio, inicio, alvo_ms, minimo_ms, maximo_ms, quadro_ms)
+        trechos.append((inicio, corte))
+        inicio = corte
+    if duracao > inicio:
+        trechos.append((inicio, duracao))
+    return trechos
 
 
 def _carregar_audio_padrao(caminho):
@@ -55,7 +89,7 @@ class Transcritor:
         """
         Args:
             idioma (str): código do idioma (ex.: "pt-BR").
-            tamanho_trecho_ms (int): tamanho de cada trecho enviado ao serviço.
+            tamanho_trecho_ms (int): tamanho preferido de cada trecho (o corte procura a pausa mais próxima).
             carregar_audio (Callable[[str], AudioSegment]): carrega o arquivo; injetável para testes.
             reconhecedor (speech_recognition.Recognizer | None): injetável para testes.
         """
@@ -89,7 +123,7 @@ class Transcritor:
         # Sem limite, uma rede instável trava o trecho para sempre (e o Cancelar só age entre trechos).
         reconhecedor.operation_timeout = TIMEOUT_SERVICO_S
         audio = self._carregar_audio(caminho_audio)
-        trechos = calcular_trechos(len(audio), self.tamanho_trecho_ms)
+        trechos = escolher_cortes(audio, self.tamanho_trecho_ms)
 
         partes_texto, nao_entendidos = [], 0
         for indice, (inicio, fim) in enumerate(trechos, start=1):
