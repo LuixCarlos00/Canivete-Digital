@@ -1,5 +1,6 @@
 import os
 
+import docx
 import numpy
 import pymupdf
 import pytest
@@ -17,6 +18,7 @@ from analisador.ferramentas_pdf import (
     interpretar_intervalo,
     normalizar_intervalo,
     pdf_para_jpg,
+    pdf_para_word,
 )
 
 
@@ -196,3 +198,41 @@ def test_imagens_para_pdf_imagem_corrompida(tmp_path):
     with pytest.raises(ErroDocumento, match="quebrada.jpg: Não foi possível abrir esta imagem."):
         imagens_para_pdf([boa, str(ruim)], str(tmp_path / "s.pdf"))
     assert not (tmp_path / "s.pdf").exists()
+
+
+def test_pdf_para_word_com_texto(criar_pdf, tmp_path):
+    destino = str(tmp_path / "d.docx")
+    assert pdf_para_word(criar_pdf(paginas=1), destino) is True
+    assert any("Pagina 1" in p.text for p in docx.Document(destino).paragraphs)
+
+
+def test_pdf_para_word_escaneado_retorna_false(criar_pdf, tmp_path):
+    destino = tmp_path / "d.docx"
+    assert pdf_para_word(criar_pdf(texto=False), str(destino)) is False
+    assert destino.exists()
+
+
+def test_pdf_para_word_falha_da_biblioteca(criar_pdf, tmp_path):
+    def explode(_origem, _destino):
+        raise RuntimeError("bug interno")
+
+    destino = tmp_path / "d.docx"
+    with pytest.raises(ErroDocumento, match="Não foi possível converter este PDF para Word."):
+        pdf_para_word(criar_pdf(), str(destino), converter=explode)
+    assert not destino.exists()
+
+
+def test_pdf_para_word_docx_corrompido(criar_pdf, tmp_path):
+    def gera_lixo(_origem, destino):
+        with open(destino, "wb") as arquivo:
+            arquivo.write(b"lixo")
+
+    destino = tmp_path / "d.docx"
+    with pytest.raises(ErroDocumento, match="Não foi possível converter este PDF para Word."):
+        pdf_para_word(criar_pdf(), str(destino), converter=gera_lixo)
+    assert not destino.exists()
+
+
+def test_pdf_para_word_com_senha_usa_mensagem_de_senha(criar_pdf, tmp_path):
+    with pytest.raises(ErroDocumento, match="protegido por senha"):
+        pdf_para_word(criar_pdf(senha="x"), str(tmp_path / "d.docx"))

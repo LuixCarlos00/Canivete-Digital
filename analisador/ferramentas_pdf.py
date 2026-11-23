@@ -330,3 +330,66 @@ def imagens_para_pdf(caminhos, destino, ao_progredir=None, verificar_cancelament
             progredir(indice / len(caminhos) * 100)
         verificar()
         doc.save(destino, garbage=3, deflate=True)
+
+
+def _converter_com_pdf2docx(caminho, destino):
+    """Conversão padrão PDF→Word (import tardio: a biblioteca é pesada e avisa sobre o "fitz")."""
+    import warnings
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        from pdf2docx import Converter
+
+    conversor = Converter(caminho)
+    try:
+        conversor.convert(destino)
+    finally:
+        conversor.close()
+
+
+def _docx_legivel(caminho):
+    import docx
+
+    try:
+        docx.Document(caminho)
+        return True
+    except Exception:  # noqa: BLE001 - qualquer falha ao abrir = arquivo inútil para o usuário
+        return False
+
+
+def pdf_para_word(caminho, destino, ao_progredir=None, verificar_cancelamento=None, converter=None):
+    """Converte um PDF num documento do Word (.docx).
+
+    Args:
+        caminho (str): PDF de entrada.
+        destino (str): .docx a ser criado; é apagado se a conversão falhar.
+        ao_progredir (Callable[[float], None] | None): recebe o percentual (0-100). A biblioteca
+            não informa progresso por página, então só há 0 e 100.
+        verificar_cancelamento (Callable[[], None] | None): levanta ``ConversaoCancelada``.
+        converter (Callable[[str, str], None] | None): faz a conversão; injetável para testes.
+
+    Returns:
+        bool: True se o PDF tem texto; False se parece escaneado (o Word terá só imagens).
+
+    Raises:
+        ErroDocumento: PDF ilegível ou falha na conversão.
+        ConversaoCancelada: o usuário cancelou antes de começar.
+    """
+    import traceback
+
+    progredir = ao_progredir or _nada
+    (verificar_cancelamento or _nada)()
+    with abrir_pdf(caminho) as doc:
+        tem_texto = any(pagina.get_text().strip() for pagina in doc)
+    progredir(0)
+    try:
+        (converter or _converter_com_pdf2docx)(caminho, destino)
+        if not _docx_legivel(destino):
+            raise RuntimeError("o .docx gerado não abre")
+    except Exception as erro:  # noqa: BLE001 - a biblioteca falha de formas variadas em PDFs complexos
+        traceback.print_exc()
+        if os.path.exists(destino):
+            os.remove(destino)
+        raise ErroDocumento("Não foi possível converter este PDF para Word.") from erro
+    progredir(100)
+    return tem_texto
