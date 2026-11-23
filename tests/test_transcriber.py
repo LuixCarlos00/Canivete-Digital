@@ -128,11 +128,20 @@ def _executor(stdout=b"", returncode=0):
     return executar, chamadas
 
 
-def test_carregar_monta_comando_e_audio_mono_16k():
+@pytest.fixture
+def ffmpeg_instalado(monkeypatch):
+    """Os testes do carregador não dependem de a máquina ter ffmpeg."""
+    import analisador.transcriber as modulo
+
+    monkeypatch.setattr(modulo.shutil, "which", lambda _nome: "/bin/ffmpeg")
+
+
+def test_carregar_monta_comando_e_audio_mono_16k(ffmpeg_instalado):
     executar, chamadas = _executor(stdout=b"\x00\x00" * 16000)
     audio = carregar_audio_mono_16k("/pasta/aula 01.mp3", executar=executar)
     assert (len(audio), audio.channels, audio.frame_rate, audio.sample_width) == (1000, 1, 16000, 2)
     comando, opcoes = chamadas[0]
+    assert comando[0] == "/bin/ffmpeg"
     assert comando[comando.index("-i") + 1] == "/pasta/aula 01.mp3"
     for par in (["-ac", "1"], ["-ar", "16000"], ["-f", "s16le"]):
         indice = comando.index(par[0])
@@ -141,7 +150,21 @@ def test_carregar_monta_comando_e_audio_mono_16k():
 
 
 @pytest.mark.parametrize("stdout, returncode", [(b"", 1), (b"", 0), (b"\x00\x00", 1)])
-def test_carregar_falha_do_ffmpeg_vira_mensagem_clara(stdout, returncode):
+def test_carregar_falha_do_ffmpeg_vira_mensagem_clara(stdout, returncode, ffmpeg_instalado):
     executar, _ = _executor(stdout=stdout, returncode=returncode)
     with pytest.raises(RuntimeError, match="Não foi possível ler este arquivo de áudio."):
         carregar_audio_mono_16k("x.mp3", executar=executar)
+
+
+def test_ffmpeg_ausente_gera_mensagem_de_reinstalar(monkeypatch):
+    import analisador.transcriber as modulo
+    from analisador.utils import mensagem_de_erro_amigavel
+
+    monkeypatch.setattr(modulo.shutil, "which", lambda _nome: None)
+
+    def executar_windows(comando, **_opcoes):  # o Windows não cita o nome do programa no erro
+        raise FileNotFoundError(2, "O sistema não pode encontrar o arquivo especificado")
+
+    with pytest.raises(FileNotFoundError) as erro:
+        carregar_audio_mono_16k("x.mp3", executar=executar_windows)
+    assert mensagem_de_erro_amigavel(erro.value).startswith("O ffmpeg não foi encontrado. Rode o instalador de novo.")
