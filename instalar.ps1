@@ -98,20 +98,26 @@ function E-BloqueioDePolitica($erro) {
 }
 
 # Remove a instalacao com o nome antigo. O ffmpeg ja baixado (~100 MB) e aproveitado na pasta nova.
-function Remover-VersaoAntiga {
+function Remover-VersaoAntiga([switch]$AproveitarFfmpeg) {
     foreach ($atalho in $AtalhosAntigos) { Remove-Item $atalho -Force -ErrorAction SilentlyContinue }
     Remove-Item $ChaveAntiga -Recurse -Force -ErrorAction SilentlyContinue
     if (-not (Test-Path $PastaAntiga)) { return }
     Etapa 'Removendo a versao antiga (Analisador YouTube)'
     Parar-App $PastaAntiga
-    $ffmpegAntigo = Join-Path $PastaAntiga 'ffmpeg'
-    $ffmpegNovo = Join-Path $PastaInstalacao 'ffmpeg'
-    if ((Test-Path $ffmpegAntigo) -and -not (Test-Path $ffmpegNovo)) {
-        New-Item -ItemType Directory -Path $PastaInstalacao -Force | Out-Null
-        Move-Item $ffmpegAntigo $ffmpegNovo -ErrorAction SilentlyContinue
+    if ($AproveitarFfmpeg) {
+        $ffmpegAntigo = Join-Path $PastaAntiga 'ffmpeg'
+        $ffmpegNovo = Join-Path $PastaInstalacao 'ffmpeg'
+        if ((Test-Path $ffmpegAntigo) -and -not (Test-Path $ffmpegNovo)) {
+            New-Item -ItemType Directory -Path $PastaInstalacao -Force | Out-Null
+            Move-Item $ffmpegAntigo $ffmpegNovo -ErrorAction SilentlyContinue
+        }
     }
     Remove-Item $PastaAntiga -Recurse -Force -ErrorAction SilentlyContinue
-    Ok 'Versao antiga removida (seus arquivos em Downloads foram mantidos).'
+    if (Test-Path $PastaAntiga) {
+        Write-Host '    Nao consegui apagar tudo da versao antiga; feche o programa e rode o instalador de novo.' -ForegroundColor Yellow
+    } else {
+        Ok 'Versao antiga removida (seus arquivos em Downloads foram mantidos).'
+    }
 }
 
 # ------------------------------------------------------------------ desinstalar
@@ -272,8 +278,6 @@ try {
     }
     Ok "Usando: $($python.Exe) $($python.Args -join ' ')"
 
-    Remover-VersaoAntiga
-
     Etapa "Instalando em $PastaInstalacao"
     Parar-App
     if (Test-Path $PastaInstalacao) {
@@ -302,6 +306,9 @@ try {
     Executar $venvPython @('-m', 'pip', 'install', '--upgrade', '-r', (Join-Path $PastaInstalacao 'requirements.txt'),
                            '--quiet', '--disable-pip-version-check')
     Ok 'Dependencias instaladas'
+
+    # So agora, com o app novo funcionando, a versao antiga sai: se algo falhar antes, ela continua usavel.
+    Remover-VersaoAntiga -AproveitarFfmpeg
 
     Instalar-Ffmpeg $PastaInstalacao
 

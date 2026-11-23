@@ -134,7 +134,6 @@ fi
 
 # ------------------------------------------------------------------- app
 etapa "Instalando o app em $PASTA_APP"
-remover_versao_antiga
 mkdir -p "$PASTA_APP"
 rm -rf "$PASTA_APP/analisador"
 cp -R "$ORIGEM/analisador" "$ORIGEM/main.py" "$ORIGEM/requirements.txt" "$PASTA_APP/"
@@ -142,6 +141,8 @@ cp -R "$ORIGEM/analisador" "$ORIGEM/main.py" "$ORIGEM/requirements.txt" "$PASTA_
 "$PASTA_APP/.venv/bin/python" -m pip install --upgrade pip --quiet --disable-pip-version-check
 "$PASTA_APP/.venv/bin/python" -m pip install -r "$PASTA_APP/requirements.txt" --quiet --disable-pip-version-check
 ok "Dependencias instaladas"
+# So agora, com o app novo funcionando, a versao antiga sai: se algo falhar antes, ela continua usavel.
+remover_versao_antiga
 
 etapa "Criando atalhos"
 mkdir -p "$PASTA_BIN"
