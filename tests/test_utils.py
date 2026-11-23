@@ -7,6 +7,7 @@ from analisador.utils import (
     e_url_youtube_valida,
     extrair_urls,
     garantir_pasta,
+    formatar_tamanho,
     mensagem_de_erro_amigavel,
     nome_arquivo_transcricao,
     nome_base_do_arquivo,
@@ -131,3 +132,10 @@ def test_garantir_pasta_cria_e_e_idempotente(tmp_path):
     assert garantir_pasta(str(destino)) == str(destino)
     assert destino.is_dir()
     garantir_pasta(str(destino))  # não deve falhar se já existir
+
+
+@pytest.mark.parametrize("n, esperado", [
+    (0, "0 bytes"), (900, "900 bytes"), (2048, "2 KB"),
+    (12_582_912, "12,0 MB"), (3_221_225_472, "3,0 GB")])
+def test_formatar_tamanho(n, esperado):
+    assert formatar_tamanho(n) == esperado

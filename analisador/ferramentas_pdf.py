@@ -193,3 +193,40 @@ def dividir_pdf(caminho, pasta_saida, paginas=None, rotulo="", ao_progredir=None
                 novo.save(destino, garbage=3, deflate=True)
             saidas.append(destino)
     return saidas
+
+
+# Imagens acima de 160 DPI são reamostradas para 150 DPI (boa leitura na tela e na impressora caseira).
+_COMPRESSAO_DPI_LIMITE = 160
+_COMPRESSAO_DPI_ALVO = 150
+_COMPRESSAO_QUALIDADE_JPEG = 75
+
+
+def comprimir_pdf(caminho, destino, ao_progredir=None, verificar_cancelamento=None):
+    """Grava uma cópia menor do PDF (recomprime as imagens e remove objetos sem uso).
+
+    A decisão de manter ou descartar a cópia (ganho mínimo) fica com quem chama.
+
+    Args:
+        caminho (str): PDF de entrada (nunca é alterado).
+        destino (str): PDF comprimido a ser criado.
+        ao_progredir (Callable[[float], None] | None): recebe o percentual (0-100).
+        verificar_cancelamento (Callable[[], None] | None): levanta ``ConversaoCancelada``.
+
+    Returns:
+        tuple[int, int]: (tamanho original em bytes, tamanho comprimido em bytes).
+
+    Raises:
+        ErroDocumento: arquivo ilegível.
+        ConversaoCancelada: o usuário cancelou.
+    """
+    progredir = ao_progredir or _nada
+    verificar = verificar_cancelamento or _nada
+    verificar()
+    with abrir_pdf(caminho) as doc:
+        doc.rewrite_images(dpi_threshold=_COMPRESSAO_DPI_LIMITE, dpi_target=_COMPRESSAO_DPI_ALVO,
+                           quality=_COMPRESSAO_QUALIDADE_JPEG)
+        progredir(70)
+        verificar()
+        doc.save(destino, garbage=4, deflate=True)
+    progredir(100)
+    return os.path.getsize(caminho), os.path.getsize(destino)

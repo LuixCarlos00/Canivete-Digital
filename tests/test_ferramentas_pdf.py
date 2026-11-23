@@ -1,13 +1,16 @@
 import os
 
+import numpy
 import pymupdf
 import pytest
+from PIL import Image
 
 from analisador.ferramentas_pdf import (
     ConversaoCancelada,
     ErroDocumento,
     IntervaloInvalido,
     abrir_pdf,
+    comprimir_pdf,
     dividir_pdf,
     juntar_pdfs,
     interpretar_intervalo,
@@ -110,3 +113,31 @@ def test_juntar_cancelado(criar_pdf, tmp_path):
     with pytest.raises(ConversaoCancelada):
         juntar_pdfs([criar_pdf("a.pdf"), criar_pdf("b.pdf")], str(destino), verificar_cancelamento=cancelar)
     assert not destino.exists()
+
+
+def _pdf_com_imagem_grande(tmp_path):
+    """PDF com uma foto 3000x2000 de ruído numa página pequena (DPI muito acima de 150)."""
+    pixels = (numpy.random.default_rng(0).random((2000, 3000, 3)) * 255).astype("uint8")
+    foto = str(tmp_path / "foto.png")
+    Image.fromarray(pixels).save(foto)
+    caminho = str(tmp_path / "pesado.pdf")
+    with pymupdf.open() as doc:
+        pagina = doc.new_page(width=300, height=200)
+        pagina.insert_image(pagina.rect, filename=foto)
+        doc.save(caminho)
+    return caminho
+
+
+def test_comprimir_reduz_pdf_com_imagem_grande(tmp_path):
+    origem = _pdf_com_imagem_grande(tmp_path)
+    tamanho_original = os.path.getsize(origem)
+    antes, depois = comprimir_pdf(origem, str(tmp_path / "c.pdf"))
+    assert antes == tamanho_original
+    assert depois == os.path.getsize(tmp_path / "c.pdf")
+    assert depois < antes * 0.5
+    assert os.path.getsize(origem) == tamanho_original  # original intocado
+
+
+def test_comprimir_pdf_so_texto_grava_destino(criar_pdf, tmp_path):
+    antes, depois = comprimir_pdf(criar_pdf(), str(tmp_path / "c.pdf"))
+    assert (tmp_path / "c.pdf").exists() and antes > 0 and depois > 0

@@ -63,6 +63,24 @@ def calcular_percentual(processado, total):
     return max(0.0, min(100.0, processado / total * 100))
 
 
+def formatar_tamanho(num_bytes):
+    """Formata um tamanho de arquivo para leitura humana (ex.: "12,0 MB").
+
+    Args:
+        num_bytes (int): tamanho em bytes.
+
+    Returns:
+        str: "900 bytes", "2 KB", "12,0 MB" ou "3,0 GB" (vírgula decimal, base 1024).
+    """
+    if num_bytes < 1024:
+        return f"{num_bytes} bytes"
+    if num_bytes < 1024 ** 2:
+        return f"{round(num_bytes / 1024)} KB"
+    if num_bytes < 1024 ** 3:
+        return f"{num_bytes / 1024 ** 2:.1f} MB".replace(".", ",")
+    return f"{num_bytes / 1024 ** 3:.1f} GB".replace(".", ",")
+
+
 def garantir_pasta(caminho):
     """Cria a pasta (e as pastas-pai) caso ainda não exista.
 
