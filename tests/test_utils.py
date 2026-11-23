@@ -7,6 +7,8 @@ from analisador.utils import (
     e_url_youtube_valida,
     extrair_urls,
     garantir_pasta,
+    formatar_tamanho,
+    mover_itens,
     mensagem_de_erro_amigavel,
     nome_arquivo_transcricao,
     nome_base_do_arquivo,
@@ -131,3 +133,24 @@ def test_garantir_pasta_cria_e_e_idempotente(tmp_path):
     assert garantir_pasta(str(destino)) == str(destino)
     assert destino.is_dir()
     garantir_pasta(str(destino))  # não deve falhar se já existir
+
+
+@pytest.mark.parametrize("n, esperado", [
+    (0, "0 bytes"), (900, "900 bytes"), (2048, "2 KB"),
+    (12_582_912, "12,0 MB"), (3_221_225_472, "3,0 GB")])
+def test_formatar_tamanho(n, esperado):
+    assert formatar_tamanho(n) == esperado
+
+
+@pytest.mark.parametrize("indices, delta, lista, selecao", [
+    ([1], -1, ["b", "a", "c", "d"], [0]),
+    ([1, 2], 1, ["a", "d", "b", "c"], [2, 3]),
+    ([0], -1, ["a", "b", "c", "d"], [0]),       # já no topo: nada muda
+    ([3], 1, ["a", "b", "c", "d"], [3]),        # já no fim: nada muda
+    ([], 1, ["a", "b", "c", "d"], []),
+    ([0, 2], 1, ["b", "a", "d", "c"], [1, 3]),  # seleção separada: cada um anda uma casa
+])
+def test_mover_itens(indices, delta, lista, selecao):
+    original = ["a", "b", "c", "d"]
+    assert mover_itens(original, indices, delta) == (lista, selecao)
+    assert original == ["a", "b", "c", "d"]  # não altera a lista recebida

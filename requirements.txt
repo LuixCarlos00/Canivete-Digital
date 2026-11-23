@@ -4,3 +4,11 @@ pydub>=0.25.1
 # Python 3.13 removeu os módulos audioop e aifc, usados por pydub e SpeechRecognition.
 audioop-lts; python_version >= "3.13"
 standard-aifc; python_version >= "3.13"
+# Aba "Converter documentos". PyMuPDF 2.x exige Python 3.11 e não tem wheel para macOS Intel.
+pymupdf>=1.26.7,<2
+# Teto: uma versão futura poderia exigir PyMuPDF 2.x e brigar com o teto acima, quebrando o instalador.
+pdf2docx>=0.5.13,<0.6
+# Usado direto para validar o .docx gerado (hoje chega junto com o pdf2docx, mas não dependemos disso).
+python-docx>=1.0
+# Aplica a rotação EXIF das fotos (o PyMuPDF não faz isso).
+Pillow>=10

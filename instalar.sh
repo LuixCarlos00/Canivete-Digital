@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Instalador "um comando so" do Analisador de Video do YouTube para Linux e macOS.
+# Instalador "um comando so" do Canivete Digital para Linux e macOS.
 #
 # Um comando so (sem baixar nada antes):
-#   curl -fsSL https://raw.githubusercontent.com/LuixCarlos00/Analizador-De-Video-Youtube/main/instalar.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/LuixCarlos00/Canivete-Digital/main/instalar.sh | bash
 # Com o projeto ja baixado:
 #   bash instalar.sh
 # Opcoes:
@@ -11,16 +11,16 @@
 #
 # O que ele faz:
 #   1. Instala o que faltar no sistema: Python 3 (com venv e tkinter) e ffmpeg (pede sua senha via sudo).
-#   2. Copia o app para ~/.local/share/analisador-youtube e cria um ambiente Python isolado nele.
-#   3. Cria o comando "analisador-youtube" e o atalho no menu de aplicativos / Area de Trabalho.
+#   2. Copia o app para ~/.local/share/canivete-digital e cria um ambiente Python isolado nele.
+#   3. Cria o comando "canivete-digital" e o atalho no menu de aplicativos / Area de Trabalho.
 set -euo pipefail
 
-REPOSITORIO="LuixCarlos00/Analizador-De-Video-Youtube"
-NOME_ATALHO="Analisador YouTube"
-PASTA_APP="${ANALISADOR_DIR:-$HOME/.local/share/analisador-youtube}"
+REPOSITORIO="LuixCarlos00/Canivete-Digital"
+NOME_ATALHO="Canivete Digital"
+PASTA_APP="${CANIVETE_DIR:-$HOME/.local/share/canivete-digital}"
 PASTA_BIN="$HOME/.local/bin"
-LANCADOR="$PASTA_BIN/analisador-youtube"
-ARQUIVO_DESKTOP="$HOME/.local/share/applications/analisador-youtube.desktop"
+LANCADOR="$PASTA_BIN/canivete-digital"
+ARQUIVO_DESKTOP="$HOME/.local/share/applications/canivete-digital.desktop"
 
 etapa() { printf '\n\033[1;36m==> %s\033[0m\n' "$1"; }
 ok()    { printf '    \033[32m%s\033[0m\n' "$1"; }
@@ -30,11 +30,23 @@ pasta_desktop() {
     if command -v xdg-user-dir >/dev/null 2>&1; then xdg-user-dir DESKTOP; else echo "$HOME/Desktop"; fi
 }
 
+# Nome usado ate 2026-11 ("Analisador YouTube"): removido para nao ficar atalho duplicado.
+remover_versao_antiga() {
+    local antiga="$HOME/.local/share/analisador-youtube"
+    rm -f "$PASTA_BIN/analisador-youtube" "$HOME/.local/share/applications/analisador-youtube.desktop" \
+          "$(pasta_desktop)/analisador-youtube.desktop" "$HOME/Desktop/Analisador YouTube.command"
+    if [[ -d "$antiga" ]]; then
+        rm -rf "$antiga"
+        ok "Versao antiga (Analisador YouTube) removida. Seus arquivos em Downloads foram mantidos."
+    fi
+}
+
 desinstalar() {
     etapa "Desinstalando $NOME_ATALHO"
     rm -rf "$PASTA_APP" "$LANCADOR" "$ARQUIVO_DESKTOP" \
-           "$(pasta_desktop)/analisador-youtube.desktop" "$HOME/Desktop/$NOME_ATALHO.command"
-    ok "Removido. Seus videos, audios e transcricoes foram mantidos."
+           "$(pasta_desktop)/canivete-digital.desktop" "$HOME/Desktop/$NOME_ATALHO.command"
+    remover_versao_antiga
+    ok "Removido. Seus videos, audios, transcricoes e documentos foram mantidos."
 }
 
 SEM_SISTEMA=0
@@ -129,6 +141,8 @@ cp -R "$ORIGEM/analisador" "$ORIGEM/main.py" "$ORIGEM/requirements.txt" "$PASTA_
 "$PASTA_APP/.venv/bin/python" -m pip install --upgrade pip --quiet --disable-pip-version-check
 "$PASTA_APP/.venv/bin/python" -m pip install -r "$PASTA_APP/requirements.txt" --quiet --disable-pip-version-check
 ok "Dependencias instaladas"
+# So agora, com o app novo funcionando, a versao antiga sai: se algo falhar antes, ela continua usavel.
+remover_versao_antiga
 
 etapa "Criando atalhos"
 mkdir -p "$PASTA_BIN"
@@ -150,11 +164,11 @@ else
 [Desktop Entry]
 Type=Application
 Name=$NOME_ATALHO
-Comment=Baixar videos/audios do YouTube e transcrever audio
+Comment=Baixar videos e audios do YouTube, transcrever falas e converter PDFs
 Exec="$LANCADOR"
-Icon=multimedia-video-player
+Icon=applications-utilities
 Terminal=false
-Categories=AudioVideo;Network;
+Categories=AudioVideo;Office;Utility;
 EOF
     chmod +x "$ARQUIVO_DESKTOP"
     ok "Atalho no menu de aplicativos"
@@ -163,14 +177,14 @@ EOF
     if [[ -d "$DESKTOP_DIR" ]]; then
         cp "$ARQUIVO_DESKTOP" "$DESKTOP_DIR/"
         # GNOME so permite abrir atalhos da Area de Trabalho marcados como confiaveis.
-        gio set "$DESKTOP_DIR/analisador-youtube.desktop" metadata::trusted true 2>/dev/null || true
+        gio set "$DESKTOP_DIR/canivete-digital.desktop" metadata::trusted true 2>/dev/null || true
         ok "Atalho na Area de Trabalho"
     fi
 fi
 
 case ":$PATH:" in
     *":$PASTA_BIN:"*) ;;
-    *) ok "Dica: adicione $PASTA_BIN ao PATH para usar o comando 'analisador-youtube' no terminal." ;;
+    *) ok "Dica: adicione $PASTA_BIN ao PATH para usar o comando 'canivete-digital' no terminal." ;;
 esac
 
 printf '\n\033[1;32mPronto! Abra "%s" pelo menu de aplicativos ou pela Area de Trabalho.\033[0m\n' "$NOME_ATALHO"

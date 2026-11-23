@@ -14,11 +14,28 @@ import traceback
 from tkinter import filedialog, font as tkfont, messagebox, ttk
 
 from . import config
+from .conversor import (
+    DIVIDIR,
+    FERRAMENTAS,
+    IMAGENS_PDF,
+    JUNTAR,
+    ConversorEmLote,
+    arquivo_compativel,
+    extensoes_da_ferramenta,
+)
 from .downloader import TIPO_AUDIO, TIPO_VIDEO, DownloadCancelado, Downloader, limpar_sobras_temporarias
+from .ferramentas_pdf import ConversaoCancelada, IntervaloInvalido, interpretar_intervalo
 from .lote_transcricao import TIPO_ARQUIVO, TIPO_LINK, ItemTranscricao, TranscritorEmLote
 from .transcricao_youtube import ORIGEM_LEGENDA
 from .transcriber import TranscricaoCancelada
-from .utils import abrir_pasta, e_url_youtube_valida, extrair_urls, garantir_pasta
+from .utils import (
+    abrir_pasta,
+    e_url_youtube_valida,
+    extrair_urls,
+    garantir_pasta,
+    mensagem_de_erro_amigavel,
+    mover_itens,
+)
 
 INTERVALO_FILA_MS = 100
 
@@ -43,12 +60,13 @@ class ListaDeItens(ttk.Frame):
     do texto exibido, e ignora itens repetidos.
     """
 
-    def __init__(self, pai, nome_item="item", altura=8):
+    def __init__(self, pai, nome_item="item", altura=8, com_ordenacao=False):
         """
         Args:
             pai (tk.Widget): widget pai.
             nome_item (str): usado no contador (ex.: "link" -> "3 link(s) na lista").
             altura (int): quantidade de linhas visíveis.
+            com_ordenacao (bool): mostra os botões Subir/Descer (quando a ordem importa).
         """
         super().__init__(pai, style="Painel.TFrame")
         self._valores = []
@@ -65,6 +83,12 @@ class ListaDeItens(ttk.Frame):
 
         barra = ttk.Frame(self, style="Painel.TFrame")
         barra.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(6, 0))
+        self._botoes_ordenacao = []
+        if com_ordenacao:
+            for texto, delta in (("Subir", -1), ("Descer", 1)):
+                botao = ttk.Button(barra, text=texto, command=lambda d=delta: self.mover(d))
+                botao.pack(side=tk.LEFT, padx=(0, 6))
+                self._botoes_ordenacao.append(botao)
         self.botao_remover = ttk.Button(barra, text="Remover selecionados", command=self.remover_selecionados)
         self.botao_remover.pack(side=tk.LEFT)
         self.botao_limpar = ttk.Button(barra, text="Limpar lista", command=self.limpar)
@@ -84,7 +108,7 @@ class ListaDeItens(ttk.Frame):
     @property
     def botoes(self):
         """list[ttk.Button]: botões que devem ser travados durante uma operação."""
-        return [self.botao_remover, self.botao_limpar]
+        return self._botoes_ordenacao + [self.botao_remover, self.botao_limpar]
 
     def adicionar(self, valor, rotulo):
         """Adiciona um item, se ainda não estiver na lista.
@@ -103,6 +127,26 @@ class ListaDeItens(ttk.Frame):
         self.listbox.see(tk.END)
         self._atualizar_contador()
         return True
+
+    def mover(self, delta):
+        """Sobe (-1) ou desce (+1) as linhas selecionadas, mantendo-as selecionadas.
+
+        Args:
+            delta (int): -1 sobe, +1 desce.
+        """
+        if self.bloqueada:
+            return
+        rotulos = list(self.listbox.get(0, tk.END))
+        indices = list(self.listbox.curselection())
+        pares, novos_indices = mover_itens(list(zip(self._valores, rotulos)), indices, delta)
+        self._valores = [valor for valor, _ in pares]
+        self.listbox.delete(0, tk.END)
+        for _, rotulo in pares:
+            self.listbox.insert(tk.END, rotulo)
+        for indice in novos_indices:
+            self.listbox.selection_set(indice)
+        if novos_indices:
+            self.listbox.see(novos_indices[0])
 
     def remover_selecionados(self):
         """Remove as linhas selecionadas."""
@@ -157,7 +201,7 @@ class Aplicacao:
         self._listas = []
         self._textos = []
 
-        root.title("Analisador YouTube")
+        root.title(config.NOME_APP)
         root.geometry("960x780")
         root.minsize(820, 660)
         root.protocol("WM_DELETE_WINDOW", self._ao_fechar)
@@ -187,8 +231,8 @@ class Aplicacao:
         cabecalho = ttk.Frame(self.root, padding=(20, 16, 20, 8))
         cabecalho.grid(row=0, column=0, sticky="ew")
         cabecalho.columnconfigure(0, weight=1)
-        ttk.Label(cabecalho, text="Analisador YouTube", style="Titulo.TLabel").grid(row=0, column=0, sticky="w")
-        ttk.Label(cabecalho, text="Baixe vídeos e áudios do YouTube e transforme falas em texto.",
+        ttk.Label(cabecalho, text=config.NOME_APP, style="Titulo.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Label(cabecalho, text="Baixe vídeos e áudios do YouTube, transforme falas em texto e converta documentos PDF.",
                   style="Subtitulo.TLabel").grid(row=1, column=0, sticky="w")
         self.botao_tema = ttk.Button(cabecalho, command=self._alternar_tema)
         self.botao_tema.grid(row=0, column=1, rowspan=2, sticky="e")
@@ -197,6 +241,7 @@ class Aplicacao:
         abas.grid(row=1, column=0, sticky="nsew", padx=20)
         abas.add(self._montar_aba_baixar(abas), text="  Baixar vídeos e áudios  ")
         abas.add(self._montar_aba_transcrever(abas), text="  Transcrever para texto  ")
+        abas.add(self._montar_aba_converter(abas), text="  Converter documentos  ")
 
         self._montar_rodape()
 
@@ -290,6 +335,48 @@ class Aplicacao:
         self.text_resultado.grid(row=0, column=0, sticky="nsew")
         rolagem.grid(row=0, column=1, sticky="ns")
         self._textos.append(self.text_resultado)
+        return aba
+
+    def _montar_aba_converter(self, abas):
+        aba = ttk.Frame(abas, style="Painel.TFrame", padding=18)
+        aba.columnconfigure(0, weight=1)
+        aba.rowconfigure(5, weight=1)
+
+        self._secao(aba, 0, "1. Escolha o que fazer")
+        ferramentas = ttk.Frame(aba, style="Painel.TFrame")
+        ferramentas.grid(row=1, column=0, sticky="w", pady=(4, 0))
+        self.ferramenta = tk.StringVar(value=JUNTAR)
+        self._ferramenta_anterior = JUNTAR
+        for posicao, (chave, rotulo) in enumerate(FERRAMENTAS.items()):
+            ttk.Radiobutton(ferramentas, text=rotulo, value=chave, variable=self.ferramenta,
+                            command=self._ao_trocar_ferramenta, style="Painel.TRadiobutton") \
+                .grid(row=posicao // 3, column=posicao % 3, sticky="w", padx=(0, 28), pady=2)
+
+        self._secao(aba, 2, "2. Adicione os arquivos",
+                    "Escolha um ou vários arquivos (segure Ctrl para selecionar mais de um). "
+                    "Em Juntar e Imagens → PDF, a ordem da lista é a ordem das páginas.")
+        self._botao(aba, "Escolher arquivos...", self._escolher_arquivos_converter) \
+            .grid(row=4, column=0, sticky="w")
+
+        self.lista_converter = ListaDeItens(aba, nome_item="arquivo", altura=7, com_ordenacao=True)
+        self.lista_converter.grid(row=5, column=0, sticky="nsew", pady=(10, 0))
+        self._listas.append(self.lista_converter)
+
+        # Opções que só fazem sentido em "Dividir PDF" (aparecem/somem ao trocar de ferramenta).
+        self.frame_dividir = ttk.Frame(aba, style="Painel.TFrame")
+        self.frame_dividir.grid(row=6, column=0, sticky="w", pady=(10, 0))
+        self.modo_dividir = tk.StringVar(value="cada")
+        ttk.Radiobutton(self.frame_dividir, text="Cada página vira um PDF", value="cada",
+                        variable=self.modo_dividir, style="Painel.TRadiobutton").pack(side=tk.LEFT)
+        ttk.Radiobutton(self.frame_dividir, text="Só as páginas:", value="paginas",
+                        variable=self.modo_dividir, style="Painel.TRadiobutton").pack(side=tk.LEFT, padx=(24, 6))
+        self.entry_paginas = ttk.Entry(self.frame_dividir, width=18)
+        self.entry_paginas.pack(side=tk.LEFT)
+        # Digitar as páginas já escolhe a opção "Só as páginas".
+        self.entry_paginas.bind("<Key>", lambda _e: self.modo_dividir.set("paginas"))
+        self.frame_dividir.grid_remove()
+
+        self._botao(aba, "Converter", self._converter, destaque=True).grid(row=7, column=0, sticky="e", pady=(14, 0))
         return aba
 
     def _montar_rodape(self):
@@ -606,6 +693,113 @@ class Aplicacao:
         (messagebox.showwarning if falhas else messagebox.showinfo)("Transcrição concluída", "\n".join(linhas))
         abrir_pasta(config.PASTA_TRANSCRICOES)
 
+    # --------------------------------------------------------------- conversão
+
+    def _ao_trocar_ferramenta(self):
+        nova, anterior = self.ferramenta.get(), self._ferramenta_anterior
+        if nova == anterior:
+            return
+        if self._tarefa_atual is not None:  # a ferramenta em uso já foi lida; não muda no meio
+            self.ferramenta.set(anterior)
+            return
+        incompativeis = [c for c in self.lista_converter.valores if not arquivo_compativel(nova, c)]
+        if incompativeis:
+            if not messagebox.askokcancel("Trocar de ferramenta", "Trocar de ferramenta vai limpar a lista. Continuar?"):
+                self.ferramenta.set(anterior)
+                return
+            self.lista_converter.limpar()
+        self._ferramenta_anterior = nova
+        if nova == DIVIDIR:
+            self.frame_dividir.grid()
+        else:
+            self.frame_dividir.grid_remove()
+
+    def _escolher_arquivos_converter(self):
+        ferramenta = self.ferramenta.get()
+        tipo = "Imagens" if ferramenta == IMAGENS_PDF else "Arquivos PDF"
+        arquivos = filedialog.askopenfilenames(
+            title="Escolha um ou mais arquivos",
+            filetypes=[(tipo, " ".join(extensoes_da_ferramenta(ferramenta))), ("Todos os arquivos", "*.*")],
+        )
+        ignorados = []
+        for caminho in arquivos:
+            if arquivo_compativel(ferramenta, caminho):
+                self.lista_converter.adicionar(caminho, os.path.basename(caminho))
+            else:
+                ignorados.append(os.path.basename(caminho))
+        if ignorados:
+            messagebox.showwarning("Arquivos ignorados",
+                                   "Estes arquivos não servem para esta ferramenta e foram ignorados:\n\n"
+                                   + "\n".join(ignorados[:10]))
+
+    def _converter(self):
+        # Tudo que vem de variáveis Tk é lido aqui, na thread principal.
+        ferramenta = self.ferramenta.get()
+        arquivos = self.lista_converter.valores
+        if not arquivos:
+            messagebox.showwarning("Lista vazia", "Adicione pelo menos um arquivo à lista.")
+            return
+        if ferramenta == JUNTAR and len(arquivos) < 2:
+            messagebox.showwarning("Poucos arquivos", "Escolha pelo menos 2 PDFs para juntar.")
+            return
+        intervalo = ""
+        if ferramenta == DIVIDIR and self.modo_dividir.get() == "paginas":
+            intervalo = self.entry_paginas.get()
+            try:
+                interpretar_intervalo(intervalo)
+            except IntervaloInvalido:
+                messagebox.showwarning("Páginas inválidas", "Digite as páginas assim: 1-3, 5")
+                return
+
+        conversor = ConversorEmLote(config.PASTA_CONVERTIDOS)
+        ao_iniciar_item, _, ao_progredir = self._progresso_em_lote("Convertendo: ")
+
+        def trabalho():
+            try:
+                sucessos, falhas = conversor.converter(ferramenta, arquivos, intervalo, ao_progredir, ao_iniciar_item)
+                self._na_ui(self._concluir_conversao, sucessos, falhas)
+            except ConversaoCancelada as cancelamento:
+                # O que já tinha sido salvo antes do cancelamento sai da lista (como na aba Baixar).
+                origens = [origem for s in cancelamento.concluidos for origem in s.origens]
+                self._na_ui(self.lista_converter.remover_valores, origens)
+                salvos = len(cancelamento.concluidos)
+                extra = f"\n\n{salvos} arquivo(s) já tinham sido convertidos e salvos em:\n{config.PASTA_CONVERTIDOS}" if salvos else ""
+                self._na_ui(messagebox.showinfo, "Cancelado", f"A conversão foi cancelada.{extra}")
+            except Exception as erro:  # noqa: BLE001 - nunca terminar em silêncio para o usuário
+                traceback.print_exc()
+                self._na_ui(messagebox.showerror, "Erro inesperado",
+                            f"A conversão parou por um erro inesperado:\n\n{mensagem_de_erro_amigavel(erro)}")
+            finally:
+                self._na_ui(self._finalizar_tarefa)
+
+        self._iniciar_tarefa(conversor, trabalho)
+
+    def _concluir_conversao(self, sucessos, falhas):
+        # Tira da lista o que deu certo; o que falhou fica para tentar de novo.
+        self.lista_converter.remover_valores([origem for s in sucessos for origem in s.origens])
+
+        linhas = []
+        if sucessos:
+            linhas.append(f"{len(sucessos)} conversão(ões) concluída(s). Arquivos em:\n{config.PASTA_CONVERTIDOS}\n")
+            for sucesso in sucessos[:15]:
+                nomes = [os.path.basename(s) for s in sucesso.saidas] or [os.path.basename(sucesso.origens[0])]
+                nome = nomes[0] if len(nomes) == 1 else f"{nomes[0]} ... ({len(nomes)} arquivos)"
+                extra = sucesso.detalhe or sucesso.aviso
+                linhas.append(f"  • {nome}" + (f"  ({extra})" if extra else ""))
+            if len(sucessos) > 15:
+                linhas.append(f"  ... e mais {len(sucessos) - 15}")
+        if falhas:
+            linhas.append(f"\n{len(falhas)} falha(s) (continuam na lista para tentar de novo):")
+            linhas += [f"  • {os.path.basename(arquivo) if arquivo else 'Operação'}: {msg}" for arquivo, msg in falhas[:10]]
+
+        if falhas and not sucessos:
+            messagebox.showerror("Não foi possível converter", "\n".join(linhas))
+            return
+        tem_aviso = falhas or any(s.aviso for s in sucessos)
+        (messagebox.showwarning if tem_aviso else messagebox.showinfo)("Conversão concluída", "\n".join(linhas))
+        if any(s.saidas for s in sucessos):
+            abrir_pasta(config.PASTA_CONVERTIDOS)
+
     def _copiar_resultado(self):
         texto = self.text_resultado.get("1.0", tk.END).strip()
         if not texto:
@@ -620,6 +814,7 @@ class Aplicacao:
 
 def main():
     """Ponto de entrada da aplicação gráfica."""
+    config.migrar_pasta_antiga()
     config.configurar_ffmpeg_local()
     config.ocultar_janelas_de_console()
     limpar_sobras_temporarias()
