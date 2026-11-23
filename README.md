@@ -72,21 +72,74 @@ Na pasta do projeto, rode `instalar.bat -GerarPortatil`. Além de instalar, ele 
 | Erro ao baixar (`HTTP 403`, `bot`, etc.) | O YouTube muda com frequência. Rode o instalador de novo para atualizar a biblioteca `pytubefix`. |
 | Qualquer outro `ERRO:` em vermelho | Tire um print da janela e envie para o desenvolvedor. |
 
-### Linux / macOS
+### Linux (e macOS)
 
-Abra o terminal e cole:
+**Requisitos:** internet e a senha do seu usuário (para instalar o Python e o ffmpeg, se faltarem). Funciona no Ubuntu, Linux Mint, Debian, Fedora, Arch, openSUSE e derivados. No macOS é preciso ter o [Homebrew](https://brew.sh).
+
+#### Um comando só (recomendado)
+
+1. Abra o **Terminal** (no Ubuntu e no Mint: aperte **`Ctrl` + `Alt` + `T`**).
+2. Copie o comando abaixo, cole no terminal (**`Ctrl` + `Shift` + `V`**) e aperte **Enter**:
+
+   ```bash
+   curl -fsSL https://raw.githubusercontent.com/LuixCarlos00/Analizador-De-Video-Youtube/main/instalar.sh | bash
+   ```
+
+   Se aparecer `curl: comando não encontrado`, use este no lugar:
+
+   ```bash
+   wget -qO- https://raw.githubusercontent.com/LuixCarlos00/Analizador-De-Video-Youtube/main/instalar.sh | bash
+   ```
+
+3. Se pedir a **senha**, digite a do seu usuário e aperte **Enter**. Nada aparece na tela enquanto você digita; é normal.
+4. Espere as etapas (`==> ...`) terminarem e abra **"Analisador YouTube"** pelo menu de aplicativos ou pela Área de Trabalho. Pelo terminal, o comando é `analisador-youtube`.
+
+#### Opção 2: com o projeto já baixado
+
+Na pasta do projeto (baixada pelo **Code → Download ZIP** ou com `git clone`):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/LuixCarlos00/Analizador-De-Video-Youtube/main/instalar.sh | bash
+bash instalar.sh
 ```
 
-Depois abra **"Analisador YouTube"** pelo menu de aplicativos ou pela Área de Trabalho (no terminal: `analisador-youtube`).
-Pode pedir sua senha para instalar `python3-tk` e `ffmpeg`. No macOS é preciso ter o [Homebrew](https://brew.sh).
+Assim ele instala o código **dessa pasta**, em vez de baixar do GitHub.
+
+#### O que o instalador faz
+
+| Etapa | Detalhe |
+|---|---|
+| Sistema | Instala só o que faltar: Python 3 com `tkinter` e `venv`, e o `ffmpeg` (pelo `apt`, `dnf`, `pacman`, `zypper` ou `brew`) |
+| Programa | Copia o programa para `~/.local/share/analisador-youtube` |
+| Bibliotecas | Cria lá dentro um ambiente Python isolado com as bibliotecas do `requirements.txt` |
+| Atalhos | Cria **"Analisador YouTube"** no menu de aplicativos e na Área de Trabalho, e o comando `analisador-youtube` |
+
+Para **atualizar**, rode o mesmo comando de novo: ele substitui o programa e atualiza as bibliotecas (importante para acompanhar as mudanças do YouTube).
+
+#### Problemas comuns no Linux
+
+| Mensagem | Solução |
+|---|---|
+| `curl: comando não encontrado` | Use o comando com `wget` acima, ou instale o curl: `sudo apt install curl` |
+| `Gerenciador de pacotes nao reconhecido` | Instale manualmente Python 3 (com `tkinter` e `venv`) e o `ffmpeg`, depois rode o instalador com `--sem-sistema` (veja abaixo) |
+| Atalho não aparece no menu | Saia e entre de novo na sessão, ou abra pelo terminal com `analisador-youtube` |
+| `analisador-youtube: comando não encontrado` | A pasta `~/.local/bin` não está no `PATH`. Abra um terminal novo; se continuar, rode `~/.local/bin/analisador-youtube` |
+
+Para passar opções no modo "um comando só", use `bash -s --` antes delas:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/LuixCarlos00/Analizador-De-Video-Youtube/main/instalar.sh | bash -s -- --sem-sistema
+```
 
 ### Desinstalar
 
 - **Windows:** Configurações → Aplicativos instalados → *Analisador YouTube* → Desinstalar
-- **Linux/macOS:** `bash instalar.sh --desinstalar`
+- **Linux/macOS:**
+
+  ```bash
+  curl -fsSL https://raw.githubusercontent.com/LuixCarlos00/Analizador-De-Video-Youtube/main/instalar.sh | bash -s -- --desinstalar
+  ```
+
+  Com o projeto baixado, também funciona `bash instalar.sh --desinstalar`.
 
 Seus downloads e transcrições **não** são apagados.
 
@@ -103,6 +156,7 @@ O programa tem três abas.
 
 ### Transcrever para texto
 - Adicione **links do YouTube** e/ou **vários arquivos de áudio do computador de uma vez** (`mp3`, `mp4`, `m4a`, `wav`, `ogg`, `webm`; segure `Ctrl` para selecionar vários).
+- O áudio é dividido em trechos **cortados nas pausas da fala**, para nenhuma palavra ser partida ao meio, e é lido já em qualidade de voz (mono, 16 kHz), o que permite transcrever aulas de horas sem pesar na memória.
 - Para links, **não é preciso baixar o áudio antes**. Se o vídeo tiver **legenda em português**, o texto sai na hora. Se não tiver, o programa baixa o áudio em segundo plano, transcreve e apaga o áudio.
 - Cada transcrição vira um `.txt` com o título do vídeo (ou o nome do arquivo) e também aparece na tela, com o botão **Copiar texto**.
 
