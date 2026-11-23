@@ -1,3 +1,4 @@
+import subprocess
 import time
 
 import pytest
@@ -9,6 +10,7 @@ from analisador.transcriber import (
     ErroServicoTranscricao,
     TranscricaoCancelada,
     Transcritor,
+    carregar_audio_mono_16k,
     escolher_cortes,
 )
 
@@ -114,3 +116,32 @@ def test_cancelar_interrompe():
     t = criar(["a", "b", "c"])
     with pytest.raises(TranscricaoCancelada):
         t.transcrever("x.mp3", lambda _p: t.cancelar())
+
+
+def _executor(stdout=b"", returncode=0):
+    chamadas = []
+
+    def executar(comando, **opcoes):
+        chamadas.append((comando, opcoes))
+        return subprocess.CompletedProcess(comando, returncode, stdout=stdout, stderr=b"erro do ffmpeg")
+
+    return executar, chamadas
+
+
+def test_carregar_monta_comando_e_audio_mono_16k():
+    executar, chamadas = _executor(stdout=b"\x00\x00" * 16000)
+    audio = carregar_audio_mono_16k("/pasta/aula 01.mp3", executar=executar)
+    assert (len(audio), audio.channels, audio.frame_rate, audio.sample_width) == (1000, 1, 16000, 2)
+    comando, opcoes = chamadas[0]
+    assert comando[comando.index("-i") + 1] == "/pasta/aula 01.mp3"
+    for par in (["-ac", "1"], ["-ar", "16000"], ["-f", "s16le"]):
+        indice = comando.index(par[0])
+        assert comando[indice:indice + 2] == par
+    assert opcoes["capture_output"] is True and opcoes["stdin"] == subprocess.DEVNULL
+
+
+@pytest.mark.parametrize("stdout, returncode", [(b"", 1), (b"", 0), (b"\x00\x00", 1)])
+def test_carregar_falha_do_ffmpeg_vira_mensagem_clara(stdout, returncode):
+    executar, _ = _executor(stdout=stdout, returncode=returncode)
+    with pytest.raises(RuntimeError, match="Não foi possível ler este arquivo de áudio."):
+        carregar_audio_mono_16k("x.mp3", executar=executar)

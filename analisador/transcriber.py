@@ -1,6 +1,8 @@
 """Transcrição de arquivos de áudio usando o reconhecimento de fala do Google."""
 
 import io
+import shutil
+import subprocess
 import threading
 
 from .config import IDIOMA_TRANSCRICAO, TAMANHO_TRECHO_MS
@@ -71,10 +73,36 @@ def escolher_cortes(audio, alvo_ms=TAMANHO_TRECHO_MS, minimo_ms=MINIMO_TRECHO_MS
     return trechos
 
 
-def _carregar_audio_padrao(caminho):
-    from pydub import AudioSegment  # import tardio: requer ffmpeg instalado
+TAXA_AMOSTRAGEM_HZ = 16_000  # o reconhecimento de voz trabalha nesta taxa; mais que isso só gasta memória
 
-    return AudioSegment.from_file(caminho)
+
+def carregar_audio_mono_16k(caminho, executar=subprocess.run):
+    """Decodifica o áudio já em mono, 16 kHz, 16 bits, direto pelo ffmpeg.
+
+    Carregar na qualidade original (estéreo 44,1 kHz) ocuparia ~5x mais memória: uma aula
+    de 2 h passaria de 1 GB. Assim ela fica em ~230 MB, sem piorar a transcrição.
+    (O parâmetro ``parameters`` do pydub não serve: ele põe as opções depois da saída e o
+    ffmpeg as ignora.)
+
+    Args:
+        caminho (str): arquivo de áudio ou vídeo.
+        executar (Callable[..., subprocess.CompletedProcess]): roda o comando; injetável para testes.
+
+    Returns:
+        AudioSegment: áudio mono, 16 kHz.
+
+    Raises:
+        FileNotFoundError: ffmpeg não encontrado.
+        RuntimeError: o ffmpeg não conseguiu ler o arquivo.
+    """
+    from pydub import AudioSegment  # import tardio: só quem transcreve precisa
+
+    comando = [shutil.which("ffmpeg") or "ffmpeg", "-nostdin", "-i", caminho, "-vn",
+               "-ac", "1", "-ar", str(TAXA_AMOSTRAGEM_HZ), "-f", "s16le", "-"]
+    resultado = executar(comando, capture_output=True, stdin=subprocess.DEVNULL)
+    if resultado.returncode != 0 or not resultado.stdout:
+        raise RuntimeError("Não foi possível ler este arquivo de áudio.")
+    return AudioSegment(data=resultado.stdout, sample_width=2, frame_rate=TAXA_AMOSTRAGEM_HZ, channels=1)
 
 
 class Transcritor:
@@ -85,7 +113,7 @@ class Transcritor:
     """
 
     def __init__(self, idioma=IDIOMA_TRANSCRICAO, tamanho_trecho_ms=TAMANHO_TRECHO_MS,
-                 carregar_audio=_carregar_audio_padrao, reconhecedor=None):
+                 carregar_audio=carregar_audio_mono_16k, reconhecedor=None):
         """
         Args:
             idioma (str): código do idioma (ex.: "pt-BR").
