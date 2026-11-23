@@ -71,6 +71,7 @@ PASTA_BASE = os.path.join(pasta_downloads(), "Analisador YouTube")
 PASTA_VIDEOS = os.path.join(PASTA_BASE, "Videos")
 PASTA_AUDIOS = os.path.join(PASTA_BASE, "Audios")
 PASTA_TRANSCRICOES = os.path.join(PASTA_BASE, "Transcricoes")
+PASTA_CONVERTIDOS = os.path.join(PASTA_BASE, "Convertidos")
 
 IDIOMA_TRANSCRICAO = "pt-BR"
 

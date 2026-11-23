@@ -15,7 +15,15 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 
 
 class ErroDocumento(Exception):
-    """Problema com um documento; ``str(erro)`` é a mensagem para o usuário."""
+    """Problema com um documento; ``str(erro)`` é a mensagem para o usuário.
+
+    Attributes:
+        arquivo (str | None): em operações com vários arquivos, qual deles causou o erro.
+    """
+
+    def __init__(self, mensagem, arquivo=None):
+        super().__init__(mensagem)
+        self.arquivo = arquivo
 
 
 class IntervaloInvalido(ErroDocumento):
@@ -142,7 +150,7 @@ def juntar_pdfs(caminhos, destino, ao_progredir=None, verificar_cancelamento=Non
                 with abrir_pdf(caminho) as doc:
                     saida.insert_pdf(doc)
             except ErroDocumento as erro:
-                raise ErroDocumento(f"{os.path.basename(caminho)}: {erro}") from erro
+                raise ErroDocumento(f"{os.path.basename(caminho)}: {erro}", arquivo=caminho) from erro
             progredir(indice / len(caminhos) * 100)
         verificar()
         saida.save(destino, garbage=3, deflate=True)
@@ -319,11 +327,11 @@ def imagens_para_pdf(caminhos, destino, ao_progredir=None, verificar_cancelament
             verificar()
             nome = os.path.basename(caminho)
             if not os.path.isfile(caminho):
-                raise ErroDocumento(f"Arquivo não encontrado: {nome}")
+                raise ErroDocumento(f"Arquivo não encontrado: {nome}", arquivo=caminho)
             try:
                 dados, largura, altura = _imagem_pronta_para_pdf(caminho)
             except (UnidentifiedImageError, OSError, ValueError) as erro:
-                raise ErroDocumento(f"{nome}: Não foi possível abrir esta imagem.") from erro
+                raise ErroDocumento(f"{nome}: Não foi possível abrir esta imagem.", arquivo=caminho) from erro
             escala = _LADO_MAIOR_PAGINA_PT / max(largura, altura)
             pagina = doc.new_page(width=largura * escala, height=altura * escala)
             pagina.insert_image(pagina.rect, stream=dados)
