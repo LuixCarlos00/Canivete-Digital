@@ -1,6 +1,6 @@
 # Analisador de Vídeo do YouTube
 
-Aplicativo com interface gráfica para **baixar vídeos e áudios do YouTube** (um ou vários de uma vez) e **transcrever arquivos de áudio em texto**.
+Aplicativo com interface gráfica para **baixar vídeos e áudios do YouTube** (um ou vários de uma vez) e **transcrever arquivos de áudio em texto**. Também **junta, divide, comprime e converte PDFs** (PDF → Word, PDF → JPG, imagens → PDF), tudo no próprio computador.
 
 [![My Skills](https://skillicons.dev/icons?i=py,vscode)](https://skillicons.dev)
 
@@ -45,7 +45,7 @@ Um comando só: ele instala tudo o que falta (Python, ffmpeg, bibliotecas), cria
 |---|---|
 | Python | Instala o Python 3.12 só para o seu usuário, se ainda não tiver (via `winget` ou pelo site oficial python.org) |
 | Programa | Copia o programa para `%LOCALAPPDATA%\Programs\AnalisadorYoutube` |
-| Bibliotecas | Cria lá dentro um ambiente Python isolado com `pytubefix`, `SpeechRecognition` e `pydub` |
+| Bibliotecas | Cria lá dentro um ambiente Python isolado com `pytubefix`, `SpeechRecognition`, `pydub`, `PyMuPDF`, `pdf2docx` e `Pillow` |
 | ffmpeg | Baixa o ffmpeg (necessário para a transcrição) para dentro da pasta do programa |
 | Atalhos | Cria **"Analisador YouTube"** na Área de Trabalho e no Menu Iniciar |
 | Desinstalação | Registra em **Configurações → Aplicativos → Aplicativos instalados** |
@@ -94,7 +94,7 @@ Seus downloads e transcrições **não** são apagados.
 
 ## Funcionalidades
 
-O programa tem duas abas.
+O programa tem três abas.
 
 ### Baixar vídeos e áudios
 - Cole **um ou vários links de uma vez** (um por linha, ou separados por espaço/vírgula) e clique em **Adicionar**, ou use o botão **Colar**, que cola e adiciona direto.
@@ -106,6 +106,20 @@ O programa tem duas abas.
 - Para links, **não é preciso baixar o áudio antes**. Se o vídeo tiver **legenda em português**, o texto sai na hora. Se não tiver, o programa baixa o áudio em segundo plano, transcreve e apaga o áudio.
 - Cada transcrição vira um `.txt` com o título do vídeo (ou o nome do arquivo) e também aparece na tela, com o botão **Copiar texto**.
 
+### Converter documentos
+Escolha a ferramenta, clique em **Escolher arquivos...** e depois em **Converter**. Nada sai do seu computador.
+
+| Ferramenta | O que faz |
+|---|---|
+| **Juntar PDFs** | Um PDF só com todos os arquivos, **na ordem da lista** (use **Subir**/**Descer** para arrumar) |
+| **Dividir PDF** | Cada página vira um PDF, ou só as páginas que você digitar (ex.: `1-3, 5`) |
+| **Comprimir PDF** | Cópia menor do PDF, mostrando o tamanho antes e depois. Ajuda muito em PDF escaneado ou com fotos; se não der para diminuir pelo menos 5%, avisa e não gera cópia |
+| **PDF → Word** | Gera um `.docx` editável. PDF escaneado (foto de papel) sai só com imagens, sem texto editável |
+| **PDF → JPG** | Uma pasta com uma imagem por página |
+| **Imagens → PDF** | Um PDF com as fotos (`jpg`, `png`) na ordem da lista, já giradas como aparecem no celular |
+
+O arquivo original nunca é alterado. Para **Word → PDF**, use o próprio Word: **Arquivo → Salvar como → PDF**.
+
 ### Onde os arquivos ficam
 
 Tudo fica na pasta **Downloads** do usuário:
@@ -115,7 +129,8 @@ Downloads/
 └── Analisador YouTube/
     ├── Videos/
     ├── Audios/
-    └── Transcricoes/
+    ├── Transcricoes/
+    └── Convertidos/
 ```
 
 O botão **Abrir pasta dos arquivos** abre essa pasta.
@@ -143,6 +158,8 @@ analisador/
   transcriber.py         # transcrição de arquivo de áudio em trechos (SpeechRecognition + pydub)
   transcricao_youtube.py # transcrição a partir do link: legenda do YouTube ou áudio temporário
   lote_transcricao.py    # fila de transcrição (links e arquivos misturados), salva cada .txt
+  ferramentas_pdf.py     # juntar, dividir, comprimir, PDF→Word/JPG, imagens→PDF (PyMuPDF, pdf2docx, Pillow)
+  conversor.py           # fila de conversão: pasta temporária, cancelamento, nomes sem sobrescrever
   gui.py                 # interface Tkinter (threads se comunicam com a UI por fila)
 tests/                   # testes unitários (pytest), sem acesso à rede
 instalar.ps1 / .bat      # instalador Windows (gera .exe com PyInstaller)

@@ -11,6 +11,8 @@ NOME_APP = "AnalisadorYoutube"
 # speech_recognition usa o binário "flac" que vem dentro do pacote para enviar áudio ao Google;
 # pytubefix traz arquivos auxiliares (JS do botguard). Sem isso o .exe quebra em tempo de execução.
 datas = collect_data_files("speech_recognition") + collect_data_files("pytubefix")
+# pdf2docx (aba Converter documentos) traz arquivos auxiliares próprios; o PyMuPDF já tem hook no PyInstaller.
+datas += collect_data_files("pdf2docx")
 
 # pytubefix executa o Node.js do pacote nodejs-wheel-binaries para decifrar a assinatura dos
 # vídeos. O PyInstaller só leva os .py desse pacote; levamos só o executável do node
