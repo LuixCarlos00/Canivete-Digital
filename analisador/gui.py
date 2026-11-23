@@ -18,7 +18,7 @@ from .downloader import TIPO_AUDIO, TIPO_VIDEO, DownloadCancelado, Downloader, l
 from .lote_transcricao import TIPO_ARQUIVO, TIPO_LINK, ItemTranscricao, TranscritorEmLote
 from .transcricao_youtube import ORIGEM_LEGENDA
 from .transcriber import TranscricaoCancelada
-from .utils import abrir_pasta, e_url_youtube_valida, extrair_urls, garantir_pasta
+from .utils import abrir_pasta, e_url_youtube_valida, extrair_urls, garantir_pasta, mover_itens
 
 INTERVALO_FILA_MS = 100
 
@@ -43,12 +43,13 @@ class ListaDeItens(ttk.Frame):
     do texto exibido, e ignora itens repetidos.
     """
 
-    def __init__(self, pai, nome_item="item", altura=8):
+    def __init__(self, pai, nome_item="item", altura=8, com_ordenacao=False):
         """
         Args:
             pai (tk.Widget): widget pai.
             nome_item (str): usado no contador (ex.: "link" -> "3 link(s) na lista").
             altura (int): quantidade de linhas visíveis.
+            com_ordenacao (bool): mostra os botões Subir/Descer (quando a ordem importa).
         """
         super().__init__(pai, style="Painel.TFrame")
         self._valores = []
@@ -65,6 +66,12 @@ class ListaDeItens(ttk.Frame):
 
         barra = ttk.Frame(self, style="Painel.TFrame")
         barra.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(6, 0))
+        self._botoes_ordenacao = []
+        if com_ordenacao:
+            for texto, delta in (("Subir", -1), ("Descer", 1)):
+                botao = ttk.Button(barra, text=texto, command=lambda d=delta: self.mover(d))
+                botao.pack(side=tk.LEFT, padx=(0, 6))
+                self._botoes_ordenacao.append(botao)
         self.botao_remover = ttk.Button(barra, text="Remover selecionados", command=self.remover_selecionados)
         self.botao_remover.pack(side=tk.LEFT)
         self.botao_limpar = ttk.Button(barra, text="Limpar lista", command=self.limpar)
@@ -84,7 +91,7 @@ class ListaDeItens(ttk.Frame):
     @property
     def botoes(self):
         """list[ttk.Button]: botões que devem ser travados durante uma operação."""
-        return [self.botao_remover, self.botao_limpar]
+        return self._botoes_ordenacao + [self.botao_remover, self.botao_limpar]
 
     def adicionar(self, valor, rotulo):
         """Adiciona um item, se ainda não estiver na lista.
@@ -103,6 +110,26 @@ class ListaDeItens(ttk.Frame):
         self.listbox.see(tk.END)
         self._atualizar_contador()
         return True
+
+    def mover(self, delta):
+        """Sobe (-1) ou desce (+1) as linhas selecionadas, mantendo-as selecionadas.
+
+        Args:
+            delta (int): -1 sobe, +1 desce.
+        """
+        if self.bloqueada:
+            return
+        rotulos = list(self.listbox.get(0, tk.END))
+        indices = list(self.listbox.curselection())
+        pares, novos_indices = mover_itens(list(zip(self._valores, rotulos)), indices, delta)
+        self._valores = [valor for valor, _ in pares]
+        self.listbox.delete(0, tk.END)
+        for _, rotulo in pares:
+            self.listbox.insert(tk.END, rotulo)
+        for indice in novos_indices:
+            self.listbox.selection_set(indice)
+        if novos_indices:
+            self.listbox.see(novos_indices[0])
 
     def remover_selecionados(self):
         """Remove as linhas selecionadas."""

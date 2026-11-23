@@ -81,6 +81,29 @@ def formatar_tamanho(num_bytes):
     return f"{num_bytes / 1024 ** 3:.1f} GB".replace(".", ",")
 
 
+def mover_itens(valores, indices, delta):
+    """Move os itens selecionados uma posição para cima (-1) ou para baixo (+1).
+
+    Se algum item selecionado já está na borda para onde iria, nada muda (a seleção
+    se move sempre em bloco, sem embaralhar a ordem entre os selecionados).
+
+    Args:
+        valores (list): lista atual (não é alterada).
+        indices (list[int]): posições selecionadas.
+        delta (int): -1 sobe, +1 desce.
+
+    Returns:
+        tuple[list, list[int]]: (nova lista, novas posições dos itens movidos).
+    """
+    nova, selecionados = list(valores), sorted(indices)
+    if not selecionados or selecionados[0] + delta < 0 or selecionados[-1] + delta >= len(nova):
+        return nova, selecionados
+    # Descendo, troca de trás para frente para um item não "empurrar" o vizinho já movido.
+    for indice in (selecionados if delta < 0 else reversed(selecionados)):
+        nova[indice], nova[indice + delta] = nova[indice + delta], nova[indice]
+    return nova, [indice + delta for indice in selecionados]
+
+
 def garantir_pasta(caminho):
     """Cria a pasta (e as pastas-pai) caso ainda não exista.
 
