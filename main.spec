@@ -6,7 +6,7 @@ import os
 import nodejs_wheel
 from PyInstaller.utils.hooks import collect_data_files
 
-NOME_APP = "AnalisadorYoutube"
+NOME_APP = "CaniveteDigital"
 
 # speech_recognition usa o binário "flac" que vem dentro do pacote para enviar áudio ao Google;
 # pytubefix traz arquivos auxiliares (JS do botguard). Sem isso o .exe quebra em tempo de execução.

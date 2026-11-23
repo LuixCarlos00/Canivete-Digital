@@ -1,11 +1,11 @@
 <#
 .SYNOPSIS
-    Instalador "um comando so" do Analisador de Video do YouTube para Windows.
+    Instalador "um comando so" do Canivete Digital para Windows.
 
 .DESCRIPTION
     1. Baixa o codigo do GitHub (se o script foi rodado fora da pasta do projeto).
     2. Instala o Python (se faltar) - via winget ou instalador oficial do python.org.
-    3. Copia o app para %LOCALAPPDATA%\Programs\AnalisadorYoutube, cria nele um ambiente
+    3. Copia o app para %LOCALAPPDATA%\Programs\CaniveteDigital, cria nele um ambiente
        Python isolado com as dependencias e baixa o ffmpeg para dentro dele.
     4. Cria atalhos na Area de Trabalho e no Menu Iniciar e registra em "Aplicativos instalados".
 
@@ -13,14 +13,14 @@
     .exe gerado na hora: o Controle Inteligente de Aplicativos do Windows 11 e politicas de
     empresa (AppLocker/WDAC) bloqueiam executaveis sem assinatura nem reputacao.
 
-    Com -GerarPortatil (uso do desenvolvedor), tambem gera dist\AnalisadorYoutube-windows.zip,
+    Com -GerarPortatil (uso do desenvolvedor), tambem gera dist\CaniveteDigital-windows.zip,
     uma versao .exe portatil feita com PyInstaller.
 
     Nao precisa de administrador: tudo e instalado na pasta do usuario.
 
 .EXAMPLE
     # Sem baixar nada antes (um comando so, no PowerShell):
-    irm https://raw.githubusercontent.com/LuixCarlos00/Analizador-De-Video-Youtube/main/instalar.ps1 | iex
+    irm https://raw.githubusercontent.com/LuixCarlos00/Canivete-Digital/main/instalar.ps1 | iex
 
     # Com o projeto ja baixado: duplo clique em instalar.bat
 
@@ -39,9 +39,9 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'   # deixa o Invoke-WebRequest muito mais rapido
 [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 
-$NomeApp         = 'AnalisadorYoutube'
-$NomeAtalho      = 'Analisador YouTube'
-$Repositorio     = 'LuixCarlos00/Analizador-De-Video-Youtube'
+$NomeApp         = 'CaniveteDigital'
+$NomeAtalho      = 'Canivete Digital'
+$Repositorio     = 'LuixCarlos00/Canivete-Digital'
 $VersaoPython    = '3.12.8'
 $UrlFfmpeg       = 'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip'
 $PastaInstalacao = Join-Path $env:LOCALAPPDATA "Programs\$NomeApp"
@@ -49,6 +49,13 @@ $ChaveRegistro   = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\$N
 $Atalhos = @(
     (Join-Path ([Environment]::GetFolderPath('Desktop'))  "$NomeAtalho.lnk"),
     (Join-Path ([Environment]::GetFolderPath('Programs')) "$NomeAtalho.lnk")
+)
+# Nome usado ate 2026-11 ("Analisador YouTube"): a instalacao antiga e removida para nao ficar atalho duplicado.
+$PastaAntiga    = Join-Path $env:LOCALAPPDATA 'Programs\AnalisadorYoutube'
+$ChaveAntiga    = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\AnalisadorYoutube'
+$AtalhosAntigos = @(
+    (Join-Path ([Environment]::GetFolderPath('Desktop'))  'Analisador YouTube.lnk'),
+    (Join-Path ([Environment]::GetFolderPath('Programs')) 'Analisador YouTube.lnk')
 )
 
 function Etapa([string]$texto) { Write-Host "`n==> $texto" -ForegroundColor Cyan }
@@ -78,9 +85,9 @@ function Atualizar-Path {
 
 # Fecha o app se estiver aberto (o pythonw.exe da pasta de instalacao, ou o .exe de versoes antigas),
 # para os arquivos poderem ser substituidos.
-function Parar-App {
+function Parar-App([string]$pasta = $PastaInstalacao) {
     Get-Process -ErrorAction SilentlyContinue |
-        Where-Object { $_.Path -and $_.Path.StartsWith($PastaInstalacao, [StringComparison]::OrdinalIgnoreCase) } |
+        Where-Object { $_.Path -and $_.Path.StartsWith($pasta, [StringComparison]::OrdinalIgnoreCase) } |
         Stop-Process -Force -ErrorAction SilentlyContinue
     Start-Sleep -Milliseconds 500
 }
@@ -90,6 +97,23 @@ function E-BloqueioDePolitica($erro) {
     return "$erro" -match 'pol.tica de controle de aplicativo|Application Control policy|4551'
 }
 
+# Remove a instalacao com o nome antigo. O ffmpeg ja baixado (~100 MB) e aproveitado na pasta nova.
+function Remover-VersaoAntiga {
+    foreach ($atalho in $AtalhosAntigos) { Remove-Item $atalho -Force -ErrorAction SilentlyContinue }
+    Remove-Item $ChaveAntiga -Recurse -Force -ErrorAction SilentlyContinue
+    if (-not (Test-Path $PastaAntiga)) { return }
+    Etapa 'Removendo a versao antiga (Analisador YouTube)'
+    Parar-App $PastaAntiga
+    $ffmpegAntigo = Join-Path $PastaAntiga 'ffmpeg'
+    $ffmpegNovo = Join-Path $PastaInstalacao 'ffmpeg'
+    if ((Test-Path $ffmpegAntigo) -and -not (Test-Path $ffmpegNovo)) {
+        New-Item -ItemType Directory -Path $PastaInstalacao -Force | Out-Null
+        Move-Item $ffmpegAntigo $ffmpegNovo -ErrorAction SilentlyContinue
+    }
+    Remove-Item $PastaAntiga -Recurse -Force -ErrorAction SilentlyContinue
+    Ok 'Versao antiga removida (seus arquivos em Downloads foram mantidos).'
+}
+
 # ------------------------------------------------------------------ desinstalar
 function Desinstalar-App {
     Etapa "Desinstalando $NomeAtalho"
@@ -97,6 +121,7 @@ function Desinstalar-App {
     foreach ($atalho in $Atalhos) { Remove-Item $atalho -Force -ErrorAction SilentlyContinue }
     Remove-Item $ChaveRegistro -Recurse -Force -ErrorAction SilentlyContinue
     Remove-Item $PastaInstalacao -Recurse -Force -ErrorAction SilentlyContinue
+    Remover-VersaoAntiga
     Ok 'Removido. Seus videos, audios e transcricoes na pasta do usuario foram mantidos.'
 }
 
@@ -247,11 +272,13 @@ try {
     }
     Ok "Usando: $($python.Exe) $($python.Args -join ' ')"
 
+    Remover-VersaoAntiga
+
     Etapa "Instalando em $PastaInstalacao"
     Parar-App
     if (Test-Path $PastaInstalacao) {
         # Reinstalacao: mantem o ffmpeg (~100 MB) e o ambiente Python ja criados; o resto e substituido
-        # (inclusive o AnalisadorYoutube.exe e a pasta _internal de versoes antigas).
+        # (inclusive o .exe e a pasta _internal de versoes antigas).
         Get-ChildItem $PastaInstalacao -Force | Where-Object { $_.Name -notin @('ffmpeg', '.venv') } |
             Remove-Item -Recurse -Force
     } else {
