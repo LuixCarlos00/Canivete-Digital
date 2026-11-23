@@ -31,7 +31,15 @@ class IntervaloInvalido(ErroDocumento):
 
 
 class ConversaoCancelada(Exception):
-    """O usuário cancelou a conversão."""
+    """O usuário cancelou a conversão.
+
+    Attributes:
+        concluidos (list): em lotes, os itens já salvos antes do cancelamento.
+    """
+
+    def __init__(self, concluidos=None):
+        super().__init__("Conversão cancelada pelo usuário.")
+        self.concluidos = list(concluidos or [])
 
 
 _REGEX_TRECHO = re.compile(r"^(\d+)(?:-(\d+))?$")
@@ -288,6 +296,11 @@ def _imagem_pronta_para_pdf(caminho):
         tuple[bytes, int, int]: (PNG/JPEG em memória, largura, altura).
     """
     with Image.open(caminho) as original:
+        sem_rotacao = original.getexif().get(0x0112, 1) == 1
+        if original.format == "JPEG" and original.mode in ("RGB", "L") and sem_rotacao:
+            # Já está pronto para o PDF: usa os bytes originais (sem recomprimir, sem perder qualidade).
+            with open(caminho, "rb") as arquivo:
+                return arquivo.read(), original.width, original.height
         imagem = ImageOps.exif_transpose(original)
         imagem.load()
     if imagem.mode in ("RGBA", "LA", "P"):

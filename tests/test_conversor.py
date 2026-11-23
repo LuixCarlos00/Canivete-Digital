@@ -164,3 +164,24 @@ def test_arquivo_compativel(ferramenta, caminho, esperado):
 def test_extensoes_da_ferramenta():
     assert extensoes_da_ferramenta(DIVIDIR) == ("*.pdf",)
     assert extensoes_da_ferramenta(IMAGENS_PDF) == ("*.jpg", "*.jpeg", "*.png")
+
+
+def test_erro_inesperado_em_operacao_unica_vira_falha(criar_pdf, tmp_path):
+    bloqueio = tmp_path / "nao_e_pasta"
+    bloqueio.write_text("sou um arquivo no lugar da pasta de saída")
+    conversor = ConversorEmLote(str(bloqueio))
+    sucessos, falhas = conversor.converter(JUNTAR, [criar_pdf("a.pdf"), criar_pdf("b.pdf")])
+    assert sucessos == []
+    assert len(falhas) == 1 and falhas[0][0] == "" and falhas[0][1]
+
+
+def test_cancelar_leva_junto_o_que_ja_foi_salvo(conversor, criar_pdf):
+    arquivos = [criar_pdf(f"{i}.pdf", paginas=10) for i in range(3)]
+
+    def ao_iniciar_item(indice, _total, _caminho):
+        if indice == 2:
+            conversor.cancelar()
+
+    with pytest.raises(ConversaoCancelada) as cancelamento:
+        conversor.converter(PDF_JPG, arquivos, ao_iniciar_item=ao_iniciar_item)
+    assert [s.origens for s in cancelamento.value.concluidos] == [(arquivos[0],)]

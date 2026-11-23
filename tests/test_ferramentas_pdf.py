@@ -236,3 +236,15 @@ def test_pdf_para_word_docx_corrompido(criar_pdf, tmp_path):
 def test_pdf_para_word_com_senha_usa_mensagem_de_senha(criar_pdf, tmp_path):
     with pytest.raises(ErroDocumento, match="protegido por senha"):
         pdf_para_word(criar_pdf(senha="x"), str(tmp_path / "d.docx"))
+
+
+def test_imagens_para_pdf_jpeg_sem_rotacao_entra_sem_recomprimir(tmp_path):
+    pixels = (numpy.random.default_rng(1).random((300, 400, 3)) * 255).astype("uint8")
+    foto = _salvar(tmp_path, "foto.jpg", Image.fromarray(pixels), quality=80)
+    destino = str(tmp_path / "s.pdf")
+    imagens_para_pdf([foto], destino)
+    with pymupdf.open(destino) as doc:
+        xref = doc[0].get_images()[0][0]
+        embutida = doc.extract_image(xref)["image"]
+    with open(foto, "rb") as arquivo:
+        assert embutida == arquivo.read()

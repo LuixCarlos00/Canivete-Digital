@@ -152,20 +152,24 @@ class ConversorEmLote:
                 return [], [("", str(erro))]
 
         sucessos, falhas = [], []
-        for indice, caminho in enumerate(arquivos, start=1):
-            self._verificar()
-            if ao_iniciar_item:
-                ao_iniciar_item(indice, len(arquivos), caminho)
-            try:
-                sucessos.append(self._converter_um(ferramenta, caminho, paginas, rotulo, ao_progredir))
-            except ConversaoCancelada:
-                raise
-            except ErroDocumento as erro:
-                falhas.append((caminho, str(erro)))
-            except Exception as erro:  # noqa: BLE001 - um arquivo ruim não deve parar o lote
-                if self._cancelar.is_set():
-                    raise ConversaoCancelada() from erro
-                falhas.append((caminho, mensagem_de_erro_amigavel(erro)))
+        try:
+            for indice, caminho in enumerate(arquivos, start=1):
+                self._verificar()
+                if ao_iniciar_item:
+                    ao_iniciar_item(indice, len(arquivos), caminho)
+                try:
+                    sucessos.append(self._converter_um(ferramenta, caminho, paginas, rotulo, ao_progredir))
+                except ConversaoCancelada:
+                    raise
+                except ErroDocumento as erro:
+                    falhas.append((caminho, str(erro)))
+                except Exception as erro:  # noqa: BLE001 - um arquivo ruim não deve parar o lote
+                    if self._cancelar.is_set():
+                        raise ConversaoCancelada() from erro
+                    falhas.append((caminho, mensagem_de_erro_amigavel(erro)))
+        except ConversaoCancelada as cancelamento:
+            # Leva junto o que já foi salvo, para a tela tirar esses itens da lista e avisar o usuário.
+            raise ConversaoCancelada(sucessos) from cancelamento
         return sucessos, falhas
 
     def _opcoes(self, ao_progredir):
@@ -177,13 +181,19 @@ class ConversorEmLote:
         prefixo = "PDFs juntados" if ferramenta == JUNTAR else "Imagens"
         nome = f"{prefixo}_{self._agora():%Y-%m-%d_%H-%M-%S}.pdf"
         funcao = juntar_pdfs if ferramenta == JUNTAR else imagens_para_pdf
-        with pasta_temporaria(_PREFIXO_TEMPORARIO) as temp:
-            destino_temp = os.path.join(temp, nome)
-            try:
+        try:
+            with pasta_temporaria(_PREFIXO_TEMPORARIO) as temp:
+                destino_temp = os.path.join(temp, nome)
                 funcao(list(arquivos), destino_temp, **self._opcoes(ao_progredir))
-            except ErroDocumento as erro:
-                return [], [(erro.arquivo or "", str(erro))]
-            final = mover_sem_sobrescrever(destino_temp, self.pasta_saida, nome)
+                final = mover_sem_sobrescrever(destino_temp, self.pasta_saida, nome)
+        except ConversaoCancelada:
+            raise
+        except ErroDocumento as erro:
+            return [], [(erro.arquivo or "", str(erro))]
+        except Exception as erro:  # noqa: BLE001 - erro inesperado (disco cheio, permissão...) vira falha visível
+            if self._cancelar.is_set():
+                raise ConversaoCancelada() from erro
+            return [], [("", mensagem_de_erro_amigavel(erro))]
         return [ItemConvertido(tuple(arquivos), [final])], []
 
     def _converter_um(self, ferramenta, caminho, paginas, rotulo, ao_progredir):

@@ -28,7 +28,14 @@ from .ferramentas_pdf import ConversaoCancelada, IntervaloInvalido, interpretar_
 from .lote_transcricao import TIPO_ARQUIVO, TIPO_LINK, ItemTranscricao, TranscritorEmLote
 from .transcricao_youtube import ORIGEM_LEGENDA
 from .transcriber import TranscricaoCancelada
-from .utils import abrir_pasta, e_url_youtube_valida, extrair_urls, garantir_pasta, mover_itens
+from .utils import (
+    abrir_pasta,
+    e_url_youtube_valida,
+    extrair_urls,
+    garantir_pasta,
+    mensagem_de_erro_amigavel,
+    mover_itens,
+)
 
 INTERVALO_FILA_MS = 100
 
@@ -751,8 +758,17 @@ class Aplicacao:
             try:
                 sucessos, falhas = conversor.converter(ferramenta, arquivos, intervalo, ao_progredir, ao_iniciar_item)
                 self._na_ui(self._concluir_conversao, sucessos, falhas)
-            except ConversaoCancelada:
-                self._na_ui(messagebox.showinfo, "Cancelado", "A conversão foi cancelada.")
+            except ConversaoCancelada as cancelamento:
+                # O que já tinha sido salvo antes do cancelamento sai da lista (como na aba Baixar).
+                origens = [origem for s in cancelamento.concluidos for origem in s.origens]
+                self._na_ui(self.lista_converter.remover_valores, origens)
+                salvos = len(cancelamento.concluidos)
+                extra = f"\n\n{salvos} arquivo(s) já tinham sido convertidos e salvos em:\n{config.PASTA_CONVERTIDOS}" if salvos else ""
+                self._na_ui(messagebox.showinfo, "Cancelado", f"A conversão foi cancelada.{extra}")
+            except Exception as erro:  # noqa: BLE001 - nunca terminar em silêncio para o usuário
+                traceback.print_exc()
+                self._na_ui(messagebox.showerror, "Erro inesperado",
+                            f"A conversão parou por um erro inesperado:\n\n{mensagem_de_erro_amigavel(erro)}")
             finally:
                 self._na_ui(self._finalizar_tarefa)
 
