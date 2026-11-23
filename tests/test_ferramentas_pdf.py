@@ -12,9 +12,11 @@ from analisador.ferramentas_pdf import (
     abrir_pdf,
     comprimir_pdf,
     dividir_pdf,
+    imagens_para_pdf,
     juntar_pdfs,
     interpretar_intervalo,
     normalizar_intervalo,
+    pdf_para_jpg,
 )
 
 
@@ -141,3 +143,56 @@ def test_comprimir_reduz_pdf_com_imagem_grande(tmp_path):
 def test_comprimir_pdf_so_texto_grava_destino(criar_pdf, tmp_path):
     antes, depois = comprimir_pdf(criar_pdf(), str(tmp_path / "c.pdf"))
     assert (tmp_path / "c.pdf").exists() and antes > 0 and depois > 0
+
+
+def _salvar(tmp_path, nome, imagem, **opcoes):
+    caminho = str(tmp_path / nome)
+    imagem.save(caminho, **opcoes)
+    return caminho
+
+
+def test_pdf_para_jpg_uma_imagem_por_pagina(criar_pdf, tmp_path):
+    saidas = pdf_para_jpg(criar_pdf(paginas=2), str(tmp_path / "doc"))
+    assert [os.path.basename(s) for s in saidas] == ["pagina 01.jpg", "pagina 02.jpg"]
+    with Image.open(saidas[0]) as imagem:
+        assert imagem.format == "JPEG"
+        assert imagem.size == (1240, 1755)  # A4 (595x842 pt) a 150 DPI, arredondado para cima
+
+
+def test_imagens_para_pdf_ordem_e_tamanho(tmp_path):
+    larga = _salvar(tmp_path, "larga.jpg", Image.new("RGB", (4000, 3000), "red"))
+    alta = _salvar(tmp_path, "alta.png", Image.new("RGBA", (300, 600), (0, 0, 0, 0)))
+    destino = str(tmp_path / "s.pdf")
+    imagens_para_pdf([alta, larga], destino)
+    with pymupdf.open(destino) as doc:
+        assert doc.page_count == 2
+        assert round(doc[0].rect.height) == 842 and round(doc[0].rect.width) == 421
+        assert round(doc[1].rect.width) == 842 and round(doc[1].rect.height) == 632
+
+
+def test_imagens_para_pdf_transparencia_vira_fundo_branco(tmp_path):
+    alta = _salvar(tmp_path, "alta.png", Image.new("RGBA", (30, 60), (0, 0, 0, 0)))
+    destino = str(tmp_path / "s.pdf")
+    imagens_para_pdf([alta], destino)
+    with pymupdf.open(destino) as doc:
+        pixel = doc[0].get_pixmap().pixel(10, 10)
+    assert pixel == (255, 255, 255)
+
+
+def test_imagens_para_pdf_respeita_exif(tmp_path):
+    imagem = Image.new("RGB", (400, 200), "blue")
+    exif = imagem.getexif()
+    exif[0x0112] = 6  # celular segurado em pé: girar 90°
+    caminho = _salvar(tmp_path, "celular.jpg", imagem, exif=exif)
+    imagens_para_pdf([caminho], str(tmp_path / "s.pdf"))
+    with pymupdf.open(str(tmp_path / "s.pdf")) as doc:
+        assert doc[0].rect.height > doc[0].rect.width  # retrato, como no celular
+
+
+def test_imagens_para_pdf_imagem_corrompida(tmp_path):
+    ruim = tmp_path / "quebrada.jpg"
+    ruim.write_bytes(b"lixo")
+    boa = _salvar(tmp_path, "boa.png", Image.new("RGB", (10, 10)))
+    with pytest.raises(ErroDocumento, match="quebrada.jpg: Não foi possível abrir esta imagem."):
+        imagens_para_pdf([boa, str(ruim)], str(tmp_path / "s.pdf"))
+    assert not (tmp_path / "s.pdf").exists()

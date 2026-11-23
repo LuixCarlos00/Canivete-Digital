@@ -6,10 +6,12 @@ Cada função recebe caminhos de entrada e de saída e dois callbacks opcionais:
 cuja mensagem já está em português claro.
 """
 
+import io
 import os
 import re
 
 import pymupdf
+from PIL import Image, ImageOps, UnidentifiedImageError
 
 
 class ErroDocumento(Exception):
@@ -230,3 +232,101 @@ def comprimir_pdf(caminho, destino, ao_progredir=None, verificar_cancelamento=No
         doc.save(destino, garbage=4, deflate=True)
     progredir(100)
     return os.path.getsize(caminho), os.path.getsize(destino)
+
+
+_JPG_DPI = 150
+_JPG_QUALIDADE = 85
+
+
+def pdf_para_jpg(caminho, pasta_saida, ao_progredir=None, verificar_cancelamento=None):
+    """Transforma cada página do PDF numa imagem JPG.
+
+    Args:
+        caminho (str): PDF de entrada.
+        pasta_saida (str): pasta onde as imagens serão criadas (criada se não existir).
+        ao_progredir (Callable[[float], None] | None): recebe o percentual (0-100).
+        verificar_cancelamento (Callable[[], None] | None): levanta ``ConversaoCancelada``.
+
+    Returns:
+        list[str]: caminhos das imagens ("pagina 01.jpg", "pagina 02.jpg"...).
+
+    Raises:
+        ErroDocumento: arquivo ilegível.
+        ConversaoCancelada: o usuário cancelou.
+    """
+    progredir = ao_progredir or _nada
+    verificar = verificar_cancelamento or _nada
+    os.makedirs(pasta_saida, exist_ok=True)
+    saidas = []
+    with abrir_pdf(caminho) as doc:
+        largura = _largura_numero(doc.page_count)
+        for indice, pagina in enumerate(doc, start=1):
+            verificar()
+            destino = os.path.join(pasta_saida, f"pagina {indice:0{largura}d}.jpg")
+            pagina.get_pixmap(dpi=_JPG_DPI).save(destino, jpg_quality=_JPG_QUALIDADE)
+            saidas.append(destino)
+            progredir(indice / doc.page_count * 100)
+    return saidas
+
+
+# Lado maior da página = lado maior de uma folha A4, em pontos (1 pt = 1/72 pol).
+_LADO_MAIOR_PAGINA_PT = 842
+
+
+def _imagem_pronta_para_pdf(caminho):
+    """Abre a imagem já girada como o usuário a vê (EXIF) e em RGB com fundo branco.
+
+    Returns:
+        tuple[bytes, int, int]: (PNG/JPEG em memória, largura, altura).
+    """
+    with Image.open(caminho) as original:
+        imagem = ImageOps.exif_transpose(original)
+        imagem.load()
+    if imagem.mode in ("RGBA", "LA", "P"):
+        imagem = imagem.convert("RGBA")
+        fundo = Image.new("RGB", imagem.size, "white")
+        fundo.paste(imagem, mask=imagem.getchannel("A"))
+        imagem = fundo
+    elif imagem.mode != "RGB":
+        imagem = imagem.convert("RGB")
+    buffer = io.BytesIO()
+    # JPEG continua JPEG (sem perder mais qualidade que o original); o resto vira PNG (sem perda).
+    formato = "JPEG" if caminho.lower().endswith((".jpg", ".jpeg")) else "PNG"
+    imagem.save(buffer, format=formato, **({"quality": 95} if formato == "JPEG" else {}))
+    return buffer.getvalue(), imagem.width, imagem.height
+
+
+def imagens_para_pdf(caminhos, destino, ao_progredir=None, verificar_cancelamento=None):
+    """Cria um PDF com uma imagem por página, na ordem da lista.
+
+    Cada página tem as proporções da imagem, com o lado maior do tamanho do lado maior de
+    uma A4, para fotos de celular não virarem páginas gigantes.
+
+    Args:
+        caminhos (list[str]): imagens JPG/PNG.
+        destino (str): PDF a ser criado; só é gravado se todas as imagens derem certo.
+        ao_progredir (Callable[[float], None] | None): recebe o percentual (0-100).
+        verificar_cancelamento (Callable[[], None] | None): levanta ``ConversaoCancelada``.
+
+    Raises:
+        ErroDocumento: alguma imagem não pôde ser lida; a mensagem começa com o nome dela.
+        ConversaoCancelada: o usuário cancelou.
+    """
+    progredir = ao_progredir or _nada
+    verificar = verificar_cancelamento or _nada
+    with pymupdf.open() as doc:
+        for indice, caminho in enumerate(caminhos, start=1):
+            verificar()
+            nome = os.path.basename(caminho)
+            if not os.path.isfile(caminho):
+                raise ErroDocumento(f"Arquivo não encontrado: {nome}")
+            try:
+                dados, largura, altura = _imagem_pronta_para_pdf(caminho)
+            except (UnidentifiedImageError, OSError, ValueError) as erro:
+                raise ErroDocumento(f"{nome}: Não foi possível abrir esta imagem.") from erro
+            escala = _LADO_MAIOR_PAGINA_PT / max(largura, altura)
+            pagina = doc.new_page(width=largura * escala, height=altura * escala)
+            pagina.insert_image(pagina.rect, stream=dados)
+            progredir(indice / len(caminhos) * 100)
+        verificar()
+        doc.save(destino, garbage=3, deflate=True)
