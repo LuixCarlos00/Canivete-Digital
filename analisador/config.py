@@ -66,8 +66,13 @@ def pasta_downloads(home=None):
     return descoberta or os.path.join(home, "Downloads")
 
 
+NOME_APP = "Canivete Digital"
+# Nome usado até 2026-11: a pasta antiga em Downloads é renomeada na primeira execução.
+NOME_APP_ANTIGO = "Analisador YouTube"
+
 # Tudo fica organizado numa pasta própria dentro de Downloads.
-PASTA_BASE = os.path.join(pasta_downloads(), "Analisador YouTube")
+PASTA_BASE = os.path.join(pasta_downloads(), NOME_APP)
+PASTA_BASE_ANTIGA = os.path.join(pasta_downloads(), NOME_APP_ANTIGO)
 PASTA_VIDEOS = os.path.join(PASTA_BASE, "Videos")
 PASTA_AUDIOS = os.path.join(PASTA_BASE, "Audios")
 PASTA_TRANSCRICOES = os.path.join(PASTA_BASE, "Transcricoes")
@@ -79,6 +84,31 @@ IDIOMA_TRANSCRICAO = "pt-BR"
 TAMANHO_TRECHO_MS = 10 * 1000
 
 EXTENSOES_AUDIO = ("*.mp3", "*.mp4", "*.m4a", "*.wav", "*.ogg", "*.webm")
+
+
+def migrar_pasta_antiga(pasta_nova=None, pasta_antiga=None):
+    """Renomeia a pasta de arquivos do nome antigo do app para o novo, levando tudo junto.
+
+    Só age quando a pasta antiga existe e a nova ainda não: assim nada é misturado nem
+    sobrescrito. Uma falha (pasta aberta em outro programa, sem permissão) não impede o app
+    de abrir; ele só passa a usar a pasta nova.
+
+    Args:
+        pasta_nova (str | None): destino (padrão: ``PASTA_BASE``).
+        pasta_antiga (str | None): origem (padrão: ``PASTA_BASE_ANTIGA``).
+
+    Returns:
+        bool: True se a pasta foi renomeada.
+    """
+    pasta_nova = pasta_nova or PASTA_BASE
+    pasta_antiga = pasta_antiga or PASTA_BASE_ANTIGA
+    if not os.path.isdir(pasta_antiga) or os.path.exists(pasta_nova):
+        return False
+    try:
+        os.rename(pasta_antiga, pasta_nova)
+        return True
+    except OSError:
+        return False
 
 
 def pasta_da_aplicacao():

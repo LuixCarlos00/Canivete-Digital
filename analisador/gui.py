@@ -201,7 +201,7 @@ class Aplicacao:
         self._listas = []
         self._textos = []
 
-        root.title("Analisador YouTube")
+        root.title(config.NOME_APP)
         root.geometry("960x780")
         root.minsize(820, 660)
         root.protocol("WM_DELETE_WINDOW", self._ao_fechar)
@@ -231,8 +231,8 @@ class Aplicacao:
         cabecalho = ttk.Frame(self.root, padding=(20, 16, 20, 8))
         cabecalho.grid(row=0, column=0, sticky="ew")
         cabecalho.columnconfigure(0, weight=1)
-        ttk.Label(cabecalho, text="Analisador YouTube", style="Titulo.TLabel").grid(row=0, column=0, sticky="w")
-        ttk.Label(cabecalho, text="Baixe vídeos e áudios do YouTube e transforme falas em texto.",
+        ttk.Label(cabecalho, text=config.NOME_APP, style="Titulo.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Label(cabecalho, text="Baixe vídeos e áudios do YouTube, transforme falas em texto e converta documentos PDF.",
                   style="Subtitulo.TLabel").grid(row=1, column=0, sticky="w")
         self.botao_tema = ttk.Button(cabecalho, command=self._alternar_tema)
         self.botao_tema.grid(row=0, column=1, rowspan=2, sticky="e")
@@ -814,6 +814,7 @@ class Aplicacao:
 
 def main():
     """Ponto de entrada da aplicação gráfica."""
+    config.migrar_pasta_antiga()
     config.configurar_ffmpeg_local()
     config.ocultar_janelas_de_console()
     limpar_sobras_temporarias()

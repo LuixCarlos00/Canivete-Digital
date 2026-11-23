@@ -1,1 +1,1 @@
-"""Analisador de Vídeo do YouTube: download de vídeos/áudios e transcrição de áudio."""
+"""Canivete Digital: baixa vídeos/áudios do YouTube, transcreve fala em texto e converte documentos PDF."""
