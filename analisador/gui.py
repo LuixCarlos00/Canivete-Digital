@@ -202,6 +202,7 @@ class Aplicacao:
         self._textos = []
 
         root.title(config.NOME_APP)
+        self._definir_icone(root)
         root.geometry("960x780")
         root.minsize(820, 660)
         root.protocol("WM_DELETE_WINDOW", self._ao_fechar)
@@ -213,6 +214,30 @@ class Aplicacao:
         self._montar_layout()
         self._aplicar_tema()
         self.root.after(INTERVALO_FILA_MS, self._processar_fila_ui)
+
+    def _definir_icone(self, root):
+        """Aplica o ícone do app (canivete) na janela, se os arquivos existirem.
+
+        Falha silenciosa é aceitável: alguns ambientes Linux/Mac não suportam
+        ``iconbitmap(default=...)`` e nem todo sistema tem os arquivos presentes.
+
+        Args:
+            root (tk.Tk): janela raiz do Tkinter.
+        """
+        pasta = os.path.join(os.path.dirname(__file__), "assets")
+        try:
+            ico = os.path.join(pasta, "icone.ico")
+            if os.path.exists(ico):  # Windows usa o .ico na barra de título/tarefas
+                root.iconbitmap(default=ico)
+        except tk.TclError:
+            pass
+        try:
+            png = os.path.join(pasta, "icone-64.png")
+            if os.path.exists(png):  # PhotoImage funciona em todos os sistemas (ref. precisa ficar viva)
+                self._icone_img = tk.PhotoImage(file=png)
+                root.iconphoto(True, self._icone_img)
+        except tk.TclError:
+            pass
 
     # ------------------------------------------------------------------ layout
 
