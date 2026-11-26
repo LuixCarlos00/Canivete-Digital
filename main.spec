@@ -13,6 +13,8 @@ NOME_APP = "CaniveteDigital"
 datas = collect_data_files("speech_recognition") + collect_data_files("pytubefix")
 # pdf2docx (aba Converter documentos) traz arquivos auxiliares próprios; o PyMuPDF já tem hook no PyInstaller.
 datas += collect_data_files("pdf2docx")
+# Ícone do app (canivete): a GUI lê analisador/assets/ em tempo de execução.
+datas += [("analisador/assets", "analisador/assets")]
 
 # pytubefix executa o Node.js do pacote nodejs-wheel-binaries para decifrar a assinatura dos
 # vídeos. O PyInstaller só leva os .py desse pacote; levamos só o executável do node
@@ -57,6 +59,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon="analisador/assets/icone.ico",  # ícone do .exe (canivete)
 )
 coll = COLLECT(
     exe,
