@@ -46,7 +46,7 @@ Um comando só: ele instala tudo o que falta (Python, ffmpeg, bibliotecas), cria
 | Python | Instala o Python 3.12 só para o seu usuário, se ainda não tiver (via `winget` ou pelo site oficial python.org) |
 | Programa | Copia o programa para `%LOCALAPPDATA%\Programs\CaniveteDigital` |
 | Bibliotecas | Cria lá dentro um ambiente Python isolado com `pytubefix`, `SpeechRecognition`, `pydub`, `PyMuPDF`, `pdf2docx` e `Pillow` |
-| ffmpeg | Baixa o ffmpeg (necessário para a transcrição) para dentro da pasta do programa |
+| ffmpeg | Baixa o ffmpeg (necessário para a transcrição e para baixar áudio em MP3) para dentro da pasta do programa |
 | Atalhos | Cria **"Canivete Digital"** na Área de Trabalho e no Menu Iniciar |
 | Desinstalação | Registra em **Configurações → Aplicativos → Aplicativos instalados** |
 
@@ -152,7 +152,7 @@ O programa tem três abas.
 ### Baixar vídeos e áudios
 - Cole **um ou vários links de uma vez** (um por linha, ou separados por espaço/vírgula) e clique em **Adicionar**, ou use o botão **Colar**, que cola e adiciona direto.
 - Os links vão para uma **lista**. Dá para remover os selecionados (tecla `Delete`) ou limpar tudo.
-- Escolha **Vídeo** (MP4 em até 1080p, H.264, que abre em qualquer player) ou **Só o áudio** (M4A) e clique em **Baixar tudo**.
+- Escolha **Vídeo** (MP4 em até 1080p, H.264, que abre em qualquer player), **Áudio M4A** ou **Áudio MP3** e clique em **Baixar tudo**.
 
 ### Transcrever para texto
 - Adicione **links do YouTube** e/ou **vários arquivos de áudio do computador de uma vez** (`mp3`, `mp4`, `m4a`, `wav`, `ogg`, `webm`; segure `Ctrl` para selecionar vários).
@@ -192,10 +192,11 @@ O botão **Abrir pasta dos arquivos** abre essa pasta.
 > O programa se chamava **Analisador YouTube**. Quem já usava não perde nada: na primeira vez que o Canivete Digital abre, a pasta `Downloads/Analisador YouTube` é renomeada para `Downloads/Canivete Digital` com tudo dentro, e o instalador novo remove os atalhos antigos.
 
 ### Em todas as operações
+- Botão **Atualizar** verifica se o programa está na última versão do GitHub e, se houver versão nova, atualiza a instalação.
 - Botão **Cancelar** interrompe de verdade e apaga o arquivo incompleto.
 - Em listas, um item com problema não interrompe os outros. No final aparece um resumo, e **os itens que falharam continuam na lista** para tentar de novo.
 - Mensagens de erro em português (vídeo privado, removido, com restrição de idade etc.).
-- A janela não trava durante o trabalho. Tem modo claro e modo escuro.
+- A janela já abre no modo escuro e pode ser alternada para o modo claro. Não trava durante o trabalho.
 
 > Transcrever áudio (arquivos e vídeos sem legenda) usa o serviço gratuito de reconhecimento de fala do Google: precisa de internet, é mais lento e trechos com muito ruído podem se perder (o programa avisa quantos). Legendas automáticas do YouTube costumam vir sem pontuação.
 
@@ -210,7 +211,8 @@ main.py                  # ponto de entrada
 analisador/
   config.py              # pastas de saída (dentro de Downloads), idioma, ffmpeg embutido
   utils.py               # validação de URL, parsing de listas, nomes de arquivo
-  downloader.py          # download com progresso e cancelamento (pytubefix); vídeo = imagem + áudio juntados no ffmpeg
+  downloader.py          # download com progresso e cancelamento (pytubefix); vídeo = imagem + áudio juntados no ffmpeg; MP3 é convertido com ffmpeg
+  atualizador.py         # verifica o commit da main no GitHub e atualiza a instalação
   transcriber.py         # transcrição de arquivo de áudio em trechos (SpeechRecognition + pydub)
   transcricao_youtube.py # transcrição a partir do link: legenda do YouTube ou áudio temporário
   lote_transcricao.py    # fila de transcrição (links e arquivos misturados), salva cada .txt
@@ -254,7 +256,6 @@ O resultado fica em `dist/CaniveteDigital/`. No Windows, o `instalar.ps1` faz is
 
 - Download de playlists inteiras
 - Escolha de qualidade do vídeo (hoje é sempre a melhor até 1080p)
-- Conversão do áudio para MP3
 - Escolha do idioma da transcrição na interface
 - Histórico de downloads
 

@@ -154,6 +154,32 @@ function Obter-CodigoFonte {
     return $pasta.FullName
 }
 
+# O app compara esse commit com o da branch main no GitHub para saber se ha versao nova.
+function Obter-CommitFonte([string]$origem) {
+    if (Test-Path (Join-Path $origem '.git')) {
+        $sha = $null
+        try { $sha = & git -C $origem rev-parse HEAD 2>$null } catch { $sha = $null }
+        if ("$sha".Trim()) { return "$sha".Trim() }
+    }
+    try {
+        $cabecalhos = @{ 'User-Agent' = $NomeApp; 'Accept' = 'application/vnd.github+json' }
+        return (Invoke-RestMethod "https://api.github.com/repos/$Repositorio/commits/main" -Headers $cabecalhos).sha
+    } catch {
+        return $null
+    }
+}
+
+function Gravar-VersaoInstalada([string]$origem) {
+    $commit = Obter-CommitFonte $origem
+    if (-not $commit) { return }
+    $dados = @{
+        commit        = $commit
+        repositorio   = $Repositorio
+        atualizado_em = (Get-Date).ToUniversalTime().ToString('o')
+    }
+    $dados | ConvertTo-Json | Set-Content (Join-Path $PastaInstalacao 'versao.json') -Encoding UTF8
+}
+
 # ------------------------------------------------------------------- python
 # Retorna @{Exe=...; Args=@(...)} de um Python >= 3.10, ou $null.
 function Encontrar-Python {
@@ -292,6 +318,7 @@ try {
         Copy-Item (Join-Path $origem $item) $PastaInstalacao -Recurse -Force
     }
     Get-ChildItem $PastaInstalacao -Recurse -Directory -Filter '__pycache__' | Remove-Item -Recurse -Force
+    Gravar-VersaoInstalada $origem
 
     Etapa 'Criando ambiente isolado e instalando dependencias (pode levar alguns minutos)'
     $venv = Join-Path $PastaInstalacao '.venv'
@@ -324,6 +351,8 @@ try {
         finally { Pop-Location }
         $pastaGerada = Join-Path $origem "dist\$NomeApp"
         Copy-Item (Join-Path $PastaInstalacao 'ffmpeg') $pastaGerada -Recurse -Force
+        $versaoJson = Join-Path $PastaInstalacao 'versao.json'
+        if (Test-Path $versaoJson) { Copy-Item $versaoJson $pastaGerada -Force }
         $zipFinal = Join-Path $origem "dist\$NomeApp-windows.zip"
         Compress-Archive -Path (Join-Path $pastaGerada '*') -DestinationPath $zipFinal -Force
         Ok $zipFinal

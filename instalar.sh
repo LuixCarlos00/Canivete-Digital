@@ -141,6 +141,22 @@ cp -R "$ORIGEM/analisador" "$ORIGEM/main.py" "$ORIGEM/requirements.txt" "$PASTA_
 "$PASTA_APP/.venv/bin/python" -m pip install --upgrade pip --quiet --disable-pip-version-check
 "$PASTA_APP/.venv/bin/python" -m pip install -r "$PASTA_APP/requirements.txt" --quiet --disable-pip-version-check
 ok "Dependencias instaladas"
+
+# O app compara esse commit com o da branch main no GitHub para saber se ha versao nova.
+commit=""
+if [[ -d "$ORIGEM/.git" ]] && command -v git >/dev/null 2>&1; then
+    commit="$(git -C "$ORIGEM" rev-parse HEAD 2>/dev/null || true)"
+fi
+if [[ -z "$commit" ]]; then
+    commit="$(curl -fsSL -H 'Accept: application/vnd.github+json' -H 'User-Agent: Canivete Digital' \
+        "https://api.github.com/repos/$REPOSITORIO/commits/main" | python3 -c \
+        'import sys, json; print(json.load(sys.stdin).get("sha", ""))' 2>/dev/null || true)"
+fi
+if [[ -n "$commit" ]]; then
+    printf '{"commit":"%s","repositorio":"%s","atualizado_em":"%s"}\n' \
+        "$commit" "$REPOSITORIO" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$PASTA_APP/versao.json"
+fi
+
 # So agora, com o app novo funcionando, a versao antiga sai: se algo falhar antes, ela continua usavel.
 remover_versao_antiga
 

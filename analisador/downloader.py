@@ -21,7 +21,8 @@ from .utils import (
 )
 
 TIPO_VIDEO = "video"
-TIPO_AUDIO = "audio"
+TIPO_AUDIO = "audio"  # M4A
+TIPO_AUDIO_MP3 = "audio_mp3"
 
 # 1080p em H.264 abre em qualquer player; 1440p/4K costumam vir em VP9/AV1, que o player
 # padrão do Windows não abre sem extensões extras.
@@ -178,6 +179,33 @@ def juntar_com_ffmpeg(caminho_imagem, caminho_audio, caminho_saida):
         raise RuntimeError(f"O ffmpeg não conseguiu juntar imagem e áudio: {resultado.stderr.strip()[-300:]}")
 
 
+def converter_audio_com_ffmpeg(caminho_entrada, caminho_saida, formato):
+    """Converte um arquivo de áudio para MP3 ou M4A com ffmpeg.
+
+    Args:
+        caminho_entrada (str): áudio baixado do YouTube (m4a/webm/etc.).
+        caminho_saida (str): arquivo final.
+        formato (str): ``"mp3"`` ou ``"m4a"``.
+
+    Raises:
+        ValueError: formato de saída desconhecido.
+        RuntimeError: o ffmpeg falhou.
+    """
+    if formato == "mp3":
+        codec = ["-codec:a", "libmp3lame", "-q:a", "2"]
+    elif formato == "m4a":
+        codec = ["-codec:a", "aac", "-b:a", "192k"]
+    else:
+        raise ValueError(f"Formato de áudio desconhecido: {formato}")
+
+    comando = [shutil.which("ffmpeg") or "ffmpeg", "-nostdin", "-y", "-loglevel", "error",
+               "-i", caminho_entrada, "-vn", "-map", "0:a:0", *codec, caminho_saida]
+    resultado = subprocess.run(comando, capture_output=True, stdin=subprocess.DEVNULL,
+                               encoding="utf-8", errors="replace")
+    if resultado.returncode != 0:
+        raise RuntimeError(f"O ffmpeg não conseguiu converter o áudio: {resultado.stderr.strip()[-300:]}")
+
+
 class Downloader:
     """Baixa vídeos/áudios do YouTube, reportando progresso e permitindo cancelar.
 
@@ -188,17 +216,20 @@ class Downloader:
     """
 
     def __init__(self, youtube_factory=criar_youtube, juntar=juntar_com_ffmpeg,
-                 ffmpeg_disponivel=lambda: shutil.which("ffmpeg") is not None):
+                 ffmpeg_disponivel=lambda: shutil.which("ffmpeg") is not None,
+                 converter_audio=converter_audio_com_ffmpeg):
         """
         Args:
             youtube_factory (Callable[[str, Callable], object]): cria o objeto YouTube.
             juntar (Callable[[str, str, str], None]): junta imagem + áudio.
             ffmpeg_disponivel (Callable[[], bool]): diz se dá para juntar com ffmpeg.
-            Os três são injetáveis para testes.
+            converter_audio (Callable[[str, str, str], None]): converte áudio para MP3/M4A.
+            Os quatro são injetáveis para testes.
         """
         self._youtube_factory = youtube_factory
         self._juntar = juntar
         self._ffmpeg_disponivel = ffmpeg_disponivel
+        self._converter_audio = converter_audio
         self._cancelar = threading.Event()
 
     def cancelar(self):
@@ -215,7 +246,7 @@ class Downloader:
 
         Args:
             url (str): link do vídeo no YouTube.
-            tipo (str): ``TIPO_VIDEO`` ou ``TIPO_AUDIO``.
+            tipo (str): ``TIPO_VIDEO``, ``TIPO_AUDIO`` (M4A) ou ``TIPO_AUDIO_MP3``.
             pasta_destino (str): pasta onde o arquivo será salvo.
             ao_progredir (Callable[[float], None] | None): recebe o percentual (0-100).
 
@@ -229,10 +260,12 @@ class Downloader:
         """
         if not e_url_youtube_valida(url):
             raise ValueError(f"URL inválida: {url}")
-        if tipo not in (TIPO_VIDEO, TIPO_AUDIO):
+        if tipo not in (TIPO_VIDEO, TIPO_AUDIO, TIPO_AUDIO_MP3):
             raise ValueError(f"Tipo de download desconhecido: {tipo}")
         if self.cancelado:
             raise DownloadCancelado()
+        if tipo == TIPO_AUDIO_MP3 and not self._ffmpeg_disponivel():
+            raise RuntimeError("Para baixar áudio em MP3 é preciso o ffmpeg. Rode o instalador de novo.")
 
         garantir_pasta(pasta_destino)
 
@@ -251,6 +284,8 @@ class Downloader:
 
         if tipo == TIPO_AUDIO:
             return self._baixar_para(yt.streams.get_audio_only(), pasta_destino)
+        if tipo == TIPO_AUDIO_MP3:
+            return self._baixar_mp3(yt, pasta_destino)
 
         imagem = None
         if self._ffmpeg_disponivel():
@@ -288,6 +323,18 @@ class Downloader:
             arquivo = self._baixar_stream(stream, pasta_temp)
             return mover_sem_sobrescrever(arquivo, pasta_destino, os.path.basename(arquivo))
 
+    def _baixar_mp3(self, yt, pasta_destino):
+        """Baixa o áudio-fonte e converte para MP3 sem deixar arquivo parcial na pasta do usuário."""
+        stream = yt.streams.get_audio_only()
+        with pasta_temporaria("analisador-audio-") as pasta_temp:
+            origem = self._baixar_stream(stream, pasta_temp)
+            if self.cancelado:
+                raise DownloadCancelado()
+            nome_final = f"{os.path.splitext(os.path.basename(origem))[0]}.mp3"
+            convertido = os.path.join(pasta_temp, nome_final)
+            self._converter_audio(origem, convertido, "mp3")
+            return mover_sem_sobrescrever(convertido, pasta_destino, nome_final)
+
     @staticmethod
     def _baixar_stream(stream, pasta, filename=None):
         """Baixa o stream na pasta indicada (sempre temporária: arquivo parcial nunca chega ao usuário)."""
@@ -303,7 +350,7 @@ class Downloader:
 
         Args:
             urls (list[str]): links a baixar.
-            tipo (str): ``TIPO_VIDEO`` ou ``TIPO_AUDIO``.
+            tipo (str): ``TIPO_VIDEO``, ``TIPO_AUDIO`` (M4A) ou ``TIPO_AUDIO_MP3``.
             pasta_destino (str): pasta onde os arquivos serão salvos.
             ao_progredir (Callable[[float], None] | None): progresso do item atual (0-100).
             ao_iniciar_item (Callable[[int, int, str], None] | None): recebe (indice, total, url).

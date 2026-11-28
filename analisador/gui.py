@@ -13,7 +13,7 @@ import tkinter as tk
 import traceback
 from tkinter import filedialog, font as tkfont, messagebox, ttk
 
-from . import config
+from . import atualizador, config
 from .conversor import (
     DIVIDIR,
     FERRAMENTAS,
@@ -23,7 +23,14 @@ from .conversor import (
     arquivo_compativel,
     extensoes_da_ferramenta,
 )
-from .downloader import TIPO_AUDIO, TIPO_VIDEO, DownloadCancelado, Downloader, limpar_sobras_temporarias
+from .downloader import (
+    TIPO_AUDIO,
+    TIPO_AUDIO_MP3,
+    TIPO_VIDEO,
+    DownloadCancelado,
+    Downloader,
+    limpar_sobras_temporarias,
+)
 from .ferramentas_pdf import ConversaoCancelada, IntervaloInvalido, interpretar_intervalo
 from .lote_transcricao import TIPO_ARQUIVO, TIPO_LINK, ItemTranscricao, TranscritorEmLote
 from .transcricao_youtube import ORIGEM_LEGENDA
@@ -51,6 +58,37 @@ PALETAS = {
         "campo": "#0F172A", "selecao": "#1E3A8A", "perigo": "#EF4444", "perigo_ativo": "#DC2626",
     },
 }
+
+
+class Tooltip:
+    """Dica flutuante simples para widgets ttk, que não têm opção nativa de tooltip."""
+
+    def __init__(self, widget, texto):
+        self.widget = widget
+        self.texto = texto
+        self.janela = None
+        widget.bind("<Enter>", self._mostrar)
+        widget.bind("<Leave>", self._ocultar)
+        widget.bind("<ButtonPress>", self._ocultar)
+        widget.bind("<Destroy>", self._ocultar)
+
+    def _mostrar(self, _evento=None):
+        if self.janela is not None or not self.widget.winfo_viewable():
+            return
+        x = self.widget.winfo_rootx() + self.widget.winfo_width() // 2
+        y = self.widget.winfo_rooty() + self.widget.winfo_height() + 8
+        self.janela = tk.Toplevel(self.widget)
+        self.janela.wm_overrideredirect(True)
+        self.janela.wm_attributes("-topmost", True)
+        self.janela.geometry(f"+{x}+{y}")
+        tk.Label(self.janela, text=self.texto, justify=tk.LEFT, background="#0F172A",
+                 foreground="#F1F5F9", relief=tk.SOLID, borderwidth=1, padx=8, pady=5,
+                 font="TkSmallCaptionFont").pack()
+
+    def _ocultar(self, _evento=None):
+        if self.janela is not None:
+            self.janela.destroy()
+            self.janela = None
 
 
 class ListaDeItens(ttk.Frame):
@@ -196,7 +234,9 @@ class Aplicacao:
         self._fila_ui = queue.Queue()
         self._tarefa_atual = None  # Downloader ou TranscritorEmLote em execução (para cancelar)
         self._thread_atual = None
-        self._tema = "claro"
+        self._tema = "escuro"
+        self._atualizacao_em_andamento = False
+        self._commit_atualizacao = None
         self._botoes_acao = []
         self._listas = []
         self._textos = []
@@ -259,8 +299,16 @@ class Aplicacao:
         ttk.Label(cabecalho, text=config.NOME_APP, style="Titulo.TLabel").grid(row=0, column=0, sticky="w")
         ttk.Label(cabecalho, text="Baixe vídeos e áudios do YouTube, transforme falas em texto e converta documentos PDF.",
                   style="Subtitulo.TLabel").grid(row=1, column=0, sticky="w")
-        self.botao_tema = ttk.Button(cabecalho, command=self._alternar_tema)
-        self.botao_tema.grid(row=0, column=1, rowspan=2, sticky="e")
+
+        botoes_cabecalho = ttk.Frame(cabecalho)
+        botoes_cabecalho.grid(row=0, column=1, rowspan=2, sticky="e")
+        self.botao_atualizar = ttk.Button(botoes_cabecalho, text="Atualizar",
+                                          command=self._verificar_atualizacao)
+        self.botao_atualizar.pack(side=tk.LEFT, padx=(0, 8))
+        Tooltip(self.botao_atualizar,
+                "Verifica se o programa está atualizado na última versão?")
+        self.botao_tema = ttk.Button(botoes_cabecalho, text="Modo claro", command=self._alternar_tema)
+        self.botao_tema.pack(side=tk.LEFT)
 
         abas = ttk.Notebook(self.root)
         abas.grid(row=1, column=0, sticky="nsew", padx=20)
@@ -309,7 +357,9 @@ class Aplicacao:
         self.formato = tk.StringVar(value=TIPO_VIDEO)
         ttk.Radiobutton(formatos, text="Vídeo  (MP4, até 1080p)", value=TIPO_VIDEO, variable=self.formato,
                         style="Painel.TRadiobutton").pack(side=tk.LEFT)
-        ttk.Radiobutton(formatos, text="Só o áudio  (M4A)", value=TIPO_AUDIO, variable=self.formato,
+        ttk.Radiobutton(formatos, text="Áudio  (M4A)", value=TIPO_AUDIO, variable=self.formato,
+                        style="Painel.TRadiobutton").pack(side=tk.LEFT, padx=(24, 0))
+        ttk.Radiobutton(formatos, text="Áudio  (MP3)", value=TIPO_AUDIO_MP3, variable=self.formato,
                         style="Painel.TRadiobutton").pack(side=tk.LEFT, padx=(24, 0))
 
         self._botao(aba, "Baixar tudo", self._baixar, destaque=True).grid(row=6, column=0, sticky="e", pady=(14, 0))
@@ -541,7 +591,87 @@ class Aplicacao:
             self._tarefa_atual.cancelar()
             self.label_status.configure(text="Cancelando...")
 
+    # ------------------------------------------------------------- atualização
+
+    def _preparar_atualizacao(self, texto_status):
+        self._atualizacao_em_andamento = True
+        self.botao_atualizar.state(["disabled"])
+        for botao in self._botoes_acao + [b for lista in self._listas for b in lista.botoes]:
+            botao.state(["disabled"])
+        for lista in self._listas:
+            lista.bloqueada = True
+        self.label_status.configure(text=texto_status)
+
+    def _finalizar_processo_atualizacao(self):
+        self._atualizacao_em_andamento = False
+        self._commit_atualizacao = None
+        self.botao_atualizar.state(["!disabled"])
+        for botao in self._botoes_acao + [b for lista in self._listas for b in lista.botoes]:
+            botao.state(["!disabled"])
+        for lista in self._listas:
+            lista.bloqueada = False
+        self.label_status.configure(text="Pronto.")
+
+    def _verificar_atualizacao(self):
+        if self._atualizacao_em_andamento:
+            return
+        if self._tarefa_atual is not None:
+            messagebox.showwarning("Aguarde", "Já existe uma operação em andamento.")
+            return
+        self._preparar_atualizacao("Verificando atualizações...")
+        threading.Thread(target=self._trabalho_verificar_atualizacao, daemon=True).start()
+
+    def _trabalho_verificar_atualizacao(self):
+        try:
+            resultado = atualizador.verificar_atualizacao()
+        except Exception as erro:  # noqa: BLE001 - erro de rede/API vira mensagem ao usuário
+            resultado = {"status": atualizador.ERRO, "mensagem": mensagem_de_erro_amigavel(erro)}
+        self._na_ui(self._concluir_verificacao_atualizacao, resultado)
+
+    def _concluir_verificacao_atualizacao(self, resultado):
+        if resultado.get("status") == atualizador.DESATUALIZADO:
+            self._commit_atualizacao = resultado.get("remoto")
+            if messagebox.askyesno(
+                    "Atualização disponível",
+                    "Há uma versão mais recente no GitHub. Deseja atualizar o programa agora?"):
+                self.label_status.configure(text="Atualizando o programa...")
+                threading.Thread(target=self._trabalho_atualizar, daemon=True).start()
+                return
+        self._finalizar_processo_atualizacao()
+        status = resultado.get("status")
+        if status == atualizador.ATUALIZADO:
+            messagebox.showinfo("Atualizações", "O programa já está na última versão do GitHub.")
+        elif status != atualizador.DESATUALIZADO:
+            messagebox.showerror("Não foi possível verificar",
+                                 resultado.get("mensagem", "Tente novamente mais tarde."))
+
+    def _trabalho_atualizar(self):
+        try:
+            resultado = atualizador.atualizar(commit=self._commit_atualizacao)
+        except Exception as erro:  # noqa: BLE001 - falha de download/pip vira mensagem ao usuário
+            resultado = {"status": atualizador.ERRO, "mensagem": mensagem_de_erro_amigavel(erro)}
+        self._na_ui(self._concluir_atualizacao, resultado)
+
+    def _concluir_atualizacao(self, resultado):
+        self._finalizar_processo_atualizacao()
+        status = resultado.get("status")
+        if status == atualizador.ATUALIZADO:
+            messagebox.showinfo(
+                "Atualização concluída",
+                "O programa foi atualizado. Feche e abra novamente para usar a nova versão.")
+        elif status in (atualizador.CODIGO_FONTE, atualizador.PORTATIL):
+            messagebox.showinfo("Atualização", resultado.get("mensagem", "Atualização indisponível."))
+        else:
+            messagebox.showerror("Não foi possível atualizar",
+                                 resultado.get("mensagem", "Tente novamente mais tarde."))
+
     def _ao_fechar(self):
+        if self._atualizacao_em_andamento:
+            if not messagebox.askokcancel(
+                    "Sair", "Há uma atualização em andamento. Fechar agora pode interrompê-la. Deseja sair?"):
+                return
+            self.root.destroy()
+            return
         # Guarda referências antes do diálogo: a tarefa pode terminar enquanto ele está aberto.
         tarefa, thread = self._tarefa_atual, self._thread_atual
         if tarefa is not None:

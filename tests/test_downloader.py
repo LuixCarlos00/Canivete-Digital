@@ -5,6 +5,7 @@ import pytest
 
 from analisador.downloader import (
     TIPO_AUDIO,
+    TIPO_AUDIO_MP3,
     TIPO_VIDEO,
     DownloadCancelado,
     Downloader,
@@ -67,8 +68,20 @@ class Juntador:
         open(saida, "wb").close()
 
 
-def criar(ffmpeg=True, juntador=None, **kw):
-    return Downloader(fabrica(**kw), juntar=juntador or Juntador(), ffmpeg_disponivel=lambda: ffmpeg)
+class ConversorFalso:
+    def __init__(self):
+        self.chamadas = []
+
+    def __call__(self, entrada, saida, formato):
+        assert os.path.isfile(entrada)
+        self.chamadas.append((os.path.basename(entrada), os.path.basename(saida), formato))
+        open(saida, "wb").close()
+
+
+def criar(ffmpeg=True, juntador=None, conversor=None, **kw):
+    return Downloader(fabrica(**kw), juntar=juntador or Juntador(),
+                      ffmpeg_disponivel=lambda: ffmpeg,
+                      converter_audio=conversor or ConversorFalso())
 
 
 # ------------------------------------------------------- escolha de qualidade
@@ -104,6 +117,22 @@ def test_baixar_audio_reporta_progresso_e_retorna_caminho(tmp_path):
     caminho = criar().baixar(URL, TIPO_AUDIO, str(tmp_path / "saida"), progresso.append)
     assert os.path.basename(caminho) == "Titulo.m4a"
     assert progresso == [25.0, 50.0, 75.0, 100.0]
+
+
+def test_baixar_audio_mp3_converte_e_salva_com_extensao(tmp_path):
+    conversor = ConversorFalso()
+    caminho = criar(conversor=conversor).baixar(URL, TIPO_AUDIO_MP3, str(tmp_path))
+
+    assert os.path.basename(caminho) == "Titulo.mp3"
+    assert os.path.isfile(caminho)
+    assert conversor.chamadas == [("Titulo.m4a", "Titulo.mp3", "mp3")]
+    assert os.listdir(tmp_path) == ["Titulo.mp3"]
+
+
+def test_baixar_audio_mp3_sem_ffmpeg_explica_o_problema(tmp_path):
+    with pytest.raises(RuntimeError, match="MP3.*ffmpeg"):
+        criar(ffmpeg=False).baixar(URL, TIPO_AUDIO_MP3, str(tmp_path))
+    assert os.listdir(tmp_path) == []
 
 
 # ------------------------------------------------------------------- vídeo
@@ -157,7 +186,7 @@ def test_filesize_zero_nao_divide_por_zero(tmp_path):
     assert progresso == [0.0, 0.0, 0.0, 0.0]
 
 
-@pytest.mark.parametrize("tipo", [TIPO_AUDIO, TIPO_VIDEO])
+@pytest.mark.parametrize("tipo", [TIPO_AUDIO, TIPO_AUDIO_MP3, TIPO_VIDEO])
 def test_cancelar_durante_download_interrompe_e_apaga_parcial(tmp_path, tipo):
     d = criar()
 
@@ -204,9 +233,12 @@ def test_cancelamento_no_lote_informa_o_que_ja_foi_salvo(tmp_path):
     assert os.listdir(tmp_path) == ["Titulo.m4a"]
 
 
-@pytest.mark.parametrize("tipo,nome", [(TIPO_AUDIO, "Titulo"), (TIPO_VIDEO, "v1080p")])
-def test_nao_sobrescreve_arquivo_existente(tmp_path, tipo, nome):
-    extensao = ".m4a" if tipo == TIPO_AUDIO else ".mp4"
+@pytest.mark.parametrize("tipo,nome,extensao", [
+    (TIPO_AUDIO, "Titulo", ".m4a"),
+    (TIPO_AUDIO_MP3, "Titulo", ".mp3"),
+    (TIPO_VIDEO, "v1080p", ".mp4"),
+])
+def test_nao_sobrescreve_arquivo_existente(tmp_path, tipo, nome, extensao):
     existente = tmp_path / f"{nome}{extensao}"
     existente.write_bytes(b"arquivo antigo do usuario")
     caminho = criar().baixar(URL, tipo, str(tmp_path))
@@ -214,7 +246,7 @@ def test_nao_sobrescreve_arquivo_existente(tmp_path, tipo, nome):
     assert existente.read_bytes() == b"arquivo antigo do usuario"
 
 
-@pytest.mark.parametrize("tipo", [TIPO_AUDIO, TIPO_VIDEO])
+@pytest.mark.parametrize("tipo", [TIPO_AUDIO, TIPO_AUDIO_MP3, TIPO_VIDEO])
 def test_falha_no_meio_nao_deixa_arquivo_pela_metade(tmp_path, tipo):
     with pytest.raises(ConnectionError):
         criar(erro_audio=ConnectionError("rede caiu")).baixar(URL, tipo, str(tmp_path))
@@ -229,6 +261,38 @@ def test_falha_do_ffmpeg_nao_deixa_arquivo_na_pasta(tmp_path):
     with pytest.raises(RuntimeError):
         criar(juntador=juntar_com_erro).baixar(URL, TIPO_VIDEO, str(tmp_path))
     assert os.listdir(tmp_path) == []
+
+
+def test_converter_audio_mp3_monta_comando_ffmpeg(monkeypatch):
+    import analisador.downloader as modulo
+
+    monkeypatch.setattr(modulo.shutil, "which", lambda _nome: "/bin/ffmpeg")
+    chamadas = []
+
+    def executar(comando, **opcoes):
+        chamadas.append((comando, opcoes))
+        return SimpleNamespace(returncode=0, stderr="")
+
+    monkeypatch.setattr(modulo.subprocess, "run", executar)
+    modulo.converter_audio_com_ffmpeg("/pasta/entrada.m4a", "/pasta/saida.mp3", "mp3")
+
+    comando, opcoes = chamadas[0]
+    assert comando[0] == "/bin/ffmpeg"
+    assert comando[comando.index("-i") + 1] == "/pasta/entrada.m4a"
+    assert comando[comando.index("-codec:a") + 1] == "libmp3lame"
+    assert comando[-1] == "/pasta/saida.mp3"
+    assert opcoes["capture_output"] is True
+
+
+def test_converter_audio_ffmpeg_com_erro_vira_runtime(monkeypatch):
+    import analisador.downloader as modulo
+
+    monkeypatch.setattr(modulo.shutil, "which", lambda _nome: "/bin/ffmpeg")
+    monkeypatch.setattr(modulo.subprocess, "run",
+                        lambda *_a, **_k: SimpleNamespace(returncode=1, stderr="codec inválido"))
+
+    with pytest.raises(RuntimeError, match="converter o áudio"):
+        modulo.converter_audio_com_ffmpeg("/pasta/entrada.m4a", "/pasta/saida.mp3", "mp3")
 
 
 def test_limpar_sobras_temporarias_apaga_so_as_antigas_do_app(tmp_path):
